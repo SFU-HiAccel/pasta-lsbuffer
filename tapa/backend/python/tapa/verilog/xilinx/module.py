@@ -232,6 +232,7 @@ class Module:
     # don't raise exception, parent should check if None
     return port
 
+
   def generate_istream_ports(
       self,
       port: str,
@@ -273,8 +274,7 @@ class Module:
   def generate_ibuffer_ports(
       self, port: str, arg: str,
       buffer_config: BufferConfig) -> Iterator[ast.PortArg]:
-    for suffix, width, wire_dir, intern_name, required in buffer_config.get_consumer_fifo_suffixes(
-    ):
+    for suffix, width, wire_dir, intern_name, required in buffer_config.get_consumer_fifo_suffixes():
       if required:
         yield ast.make_port_arg(port=self.get_port_of_buffer(port,
                                                              intern_name).name,
@@ -284,18 +284,18 @@ class Module:
         if pt_obj is not None:
           yield ast.make_port_arg(port=pt_obj.name, arg=wire_name(arg, suffix))
 
-    for _suffix, width, wire_dir, _intern_name, required in buffer_config.get_consumer_memory_suffixes(
-    ):
+    for _suffix, width, wire_dir, _intern_name, required in buffer_config.get_consumer_memory_suffixes():
       for index in index_generator(buffer_config.get_dim_patterns()):
         suffix = _suffix.format(index)
         intern_name = _intern_name.format(index)
-        if required:
+        if required:      # make sure that a corresponding port exists
           _ = self.get_port_of_buffer(port, intern_name)
-          if _ is None:
+          if _ is None:   # this port must have existed
+            _logger.debug(f"PDB trace set for port:%s, intern_name:%s", port, intern_name)
             import pdb
             pdb.set_trace()
           yield ast.make_port_arg(port=_.name, arg=wire_name(arg, suffix))
-        else:
+        else:             # attempt to get this port, if available.
           pt_obj = self.get_port_of_buffer(port, intern_name)
           if pt_obj is not None:
             yield ast.make_port_arg(port=pt_obj.name,
@@ -304,8 +304,7 @@ class Module:
   def generate_obuffer_ports(
       self, port: str, arg: str,
       buffer_config: BufferConfig) -> Iterator[ast.PortArg]:
-    for suffix, width, wire_dir, intern_name, required in buffer_config.get_producer_fifo_suffixes(
-    ):
+    for suffix, width, wire_dir, intern_name, required in buffer_config.get_producer_fifo_suffixes():
       if required:
         yield ast.make_port_arg(port=self.get_port_of_buffer(port,
                                                              intern_name).name,

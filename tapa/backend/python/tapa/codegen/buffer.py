@@ -109,13 +109,28 @@ class BufferConfig:
     )
 
   def get_buffer_port_names(self) -> Tuple[str]:
-    return (
-        'mem_{}address',
-        'mem_{}ce',
-        'mem_{}d',
-        'mem_{}we',
-        'mem_{}q',
-    )
+    if (self.n_sections == 1):
+      returntuple = (
+        'mem_{}address0',
+        'mem_{}ce0',
+        'mem_{}d0',
+        'mem_{}we0',
+        'mem_{}q0',
+        'mem_{}address1',
+        'mem_{}ce1',
+        'mem_{}d1',
+        'mem_{}we1',
+        'mem_{}q1',
+      )
+    else:
+      returntuple = (
+        'mem_{}address0',
+        'mem_{}ce0',
+        'mem_{}d0',
+        'mem_{}we0',
+        'mem_{}q0',
+      )
+    return returntuple
 
   def get_consumer_fifo_suffixes(self) -> Tuple[Tuple[str, int]]:
     return (
@@ -149,30 +164,59 @@ class BufferConfig:
          True),
     )
 
+  # suffix, width, wire_dir, port_suffix, _
   def get_producer_memory_suffixes(self) -> Tuple[Tuple[str, int]]:
-    return (
-        ('_mem_{}producer_address', ceil(log2(self.get_memcore_size())),
-         BufferConfig.DIR.OUTPUT, '_data_{}address0', True),
-        ('_mem_{}producer_ce', 1, BufferConfig.DIR.OUTPUT, '_data_{}ce0', True),
-        ('_mem_{}producer_d', self.width, BufferConfig.DIR.OUTPUT, '_data_{}d0',
-         True),
-        ('_mem_{}producer_we', 1, BufferConfig.DIR.OUTPUT, '_data_{}we0', True),
-        ('_mem_{}producer_q', self.width, BufferConfig.DIR.INPUT, '_data_{}q0',
-         False),
-    )
+    if (self.n_sections == 1):
+      # create 2 port implementation
+      returntuple = (
+      ('_mem_{}producer_address0', ceil(log2(self.get_memcore_size())), BufferConfig.DIR.OUTPUT, '_data_{}address0', True),
+      ('_mem_{}producer_ce0', 1, BufferConfig.DIR.OUTPUT, '_data_{}ce0', True),
+      ('_mem_{}producer_d0', self.width, BufferConfig.DIR.OUTPUT, '_data_{}d0', True),
+      ('_mem_{}producer_we0', 1, BufferConfig.DIR.OUTPUT, '_data_{}we0', True),
+      ('_mem_{}producer_q0', self.width, BufferConfig.DIR.INPUT, '_data_{}q0', False),
+      ('_mem_{}producer_address1', ceil(log2(self.get_memcore_size())), BufferConfig.DIR.OUTPUT, '_data_{}address0', True),
+      ('_mem_{}producer_ce1', 1, BufferConfig.DIR.OUTPUT, '_data_{}ce0', True),
+      ('_mem_{}producer_d1', self.width, BufferConfig.DIR.OUTPUT, '_data_{}d0', True),
+      ('_mem_{}producer_we1', 1, BufferConfig.DIR.OUTPUT, '_data_{}we0', True),
+      ('_mem_{}producer_q1', self.width, BufferConfig.DIR.INPUT, '_data_{}q0', False),
+      )
+    else:
+      returntuple = (
+      ('_mem_{}producer_address0', ceil(log2(self.get_memcore_size())), BufferConfig.DIR.OUTPUT, '_data_{}address0', True),
+      ('_mem_{}producer_ce0', 1, BufferConfig.DIR.OUTPUT, '_data_{}ce0', True),
+      ('_mem_{}producer_d0', self.width, BufferConfig.DIR.OUTPUT, '_data_{}d0', True),
+      ('_mem_{}producer_we0', 1, BufferConfig.DIR.OUTPUT, '_data_{}we0', True),
+      ('_mem_{}producer_q0', self.width, BufferConfig.DIR.INPUT, '_data_{}q0', False),
+      )
 
+    return returntuple
+
+  # suffix, width, wire_dir, port_suffix, _
   def get_consumer_memory_suffixes(self) -> Tuple[Tuple[str, int]]:
-    return (
-        ('_mem_{}consumer_address', ceil(log2(self.get_memcore_size())),
-         BufferConfig.DIR.OUTPUT, '_data_{}address0', True),
-        ('_mem_{}consumer_ce', 1, BufferConfig.DIR.OUTPUT, '_data_{}ce0', True),
-        ('_mem_{}consumer_d', self.width, BufferConfig.DIR.OUTPUT, '_data_{}d0',
-         False),
-        ('_mem_{}consumer_we', 1, BufferConfig.DIR.OUTPUT, '_data_{}we0',
-         False),
-        ('_mem_{}consumer_q', self.width, BufferConfig.DIR.INPUT, '_data_{}q0',
-         True),
-    )
+    if (self.n_sections == 1):
+      # create 2 port implementation
+      returntuple = (
+      ('_mem_{}consumer_address0', ceil(log2(self.get_memcore_size())), BufferConfig.DIR.OUTPUT, '_data_{}address0', True),
+      ('_mem_{}consumer_ce0', 1, BufferConfig.DIR.OUTPUT, '_data_{}ce0', True),
+      ('_mem_{}consumer_d0', self.width, BufferConfig.DIR.OUTPUT, '_data_{}d0', False),
+      ('_mem_{}consumer_we0', 1, BufferConfig.DIR.OUTPUT, '_data_{}we0', False),
+      ('_mem_{}consumer_q0', self.width, BufferConfig.DIR.INPUT, '_data_{}q0', False),
+      ('_mem_{}consumer_address1', ceil(log2(self.get_memcore_size())), BufferConfig.DIR.OUTPUT, '_data_{}address0', True),
+      ('_mem_{}consumer_ce1', 1, BufferConfig.DIR.OUTPUT, '_data_{}ce0', True),
+      ('_mem_{}consumer_d1', self.width, BufferConfig.DIR.OUTPUT, '_data_{}d0', False),
+      ('_mem_{}consumer_we1', 1, BufferConfig.DIR.OUTPUT, '_data_{}we0', False),
+      ('_mem_{}consumer_q1', self.width, BufferConfig.DIR.INPUT, '_data_{}q0', False),
+      )
+    else:
+      returntuple = (
+      ('_mem_{}consumer_address0', ceil(log2(self.get_memcore_size())), BufferConfig.DIR.OUTPUT, '_data_{}address0', True),
+      ('_mem_{}consumer_ce0', 1, BufferConfig.DIR.OUTPUT, '_data_{}ce0', True),
+      ('_mem_{}consumer_d0', self.width, BufferConfig.DIR.OUTPUT, '_data_{}d0', False),
+      ('_mem_{}consumer_we0', 1, BufferConfig.DIR.OUTPUT, '_data_{}we0', False),
+      ('_mem_{}consumer_q0', self.width, BufferConfig.DIR.INPUT, '_data_{}q0', False),
+      )
+
+    return returntuple
 
   def get_fifo_suffixes(self, direction: str) -> Tuple[Tuple[str, int]]:
     if direction == "produced_by":

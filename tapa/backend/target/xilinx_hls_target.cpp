@@ -246,17 +246,21 @@ void XilinxHLSTarget::AddCodeForLowerLevelBuffer(ADD_FOR_PARAMS_ARGS_DEF) {
     const auto data_var = GetDataVar(name);
 
     // generate ap_fifo port for src FIFO
-    add_pragma({"HLS interface ap_fifo port = ", src_var});
-    add_pragma({"HLS interface aggregate port = ", src_var});
+    add_pragma({"HLS interface ap_fifo port =", src_var});
+    add_pragma({"HLS interface aggregate port =", src_var});
 
     // generate ap_fifo port for sink FIFO
-    add_pragma({"HLS interface ap_fifo port = ", sink_var});
-    add_pragma({"HLS interface aggregate port = ", sink_var});
+    add_pragma({"HLS interface ap_fifo port =", sink_var});
+    add_pragma({"HLS interface aggregate port =", sink_var});
 
     // generate ap_memory port for the data
-    add_pragma({"HLS interface ap_memory latency=1 port = ",
+    add_pragma({"HLS interface ap_memory latency=1 port =",
                 data_var});
     add_pragma({"HLS aggregate variable = ", data_var});
+    if(bufferConfig.n_sections == 1)  // elevate to hybrid buffer if only 1 section is used
+    {
+      add_pragma({"HLS bind_storage type=ram_t2p variable=", data_var});
+    }
 
     auto partition_scheme = bufferConfig.partition_config;
     for (int i = 0; i < partition_scheme.size(); i++) {

@@ -313,6 +313,7 @@ class Program:
         'fifo_srl.v',
         'initialized_fifo.v',
         'initialized_relay_station.v',
+        'laneswitch.v',
         'memcore_bram_simple.v',
         'memcore_uram_simple.v',
         'memcore_bram_true.v',
@@ -333,7 +334,7 @@ class Program:
     # generate all buffer modules that we need
     for buffer_name, buffer_hash in self.buffer_configs_names_to_hashes.items():
       buffer_config = self.buffer_configs_hashes[buffer_hash]
-      generate_buffer_from_config(buffer_name, buffer_config, self.rtl_dir)
+      generate_buffer_from_config(buffer_name, buffer_config, self.rtl_dir, self.work_dir)
 
     # extract and parse RTL and populate tasks
     _logger.info('parsing RTL files and populating tasks')
@@ -370,20 +371,24 @@ class Program:
             task, buffer_name, "consumed_by")
         producer_reads = False
         consumer_writes = False
-        for index in index_generator(dims_patterns):
-          read_port_suffix = f'_data_{index}q0'
-          write_port_suffix = f'_data_{index}we0'
-          read_port = producer_task.module.get_port_of_buffer(
-              producer_buffer_name, read_port_suffix)
-          write_port = consumer_task.module.get_port_of_buffer(
-              consumer_buffer_name, write_port_suffix)
-          if read_port:
-            producer_reads = True
-          if write_port:
-            consumer_writes = True
-        make_simple = False
-        if not producer_reads and not consumer_writes:
-          make_simple = True
+        if (buffer_config.n_sections == 1): # forces a complex buffer
+          _logger.warning('  buffer channel %s has 1 section. Hybrid buffer will be used', buffer_name)
+          make_simple = False
+        else: # check whether a complex buffer is needed
+          for index in index_generator(dims_patterns):
+            read_port_suffix = f'_data_{index}q0'
+            write_port_suffix = f'_data_{index}we0'
+            read_port = producer_task.module.get_port_of_buffer(
+                producer_buffer_name, read_port_suffix)
+            write_port = consumer_task.module.get_port_of_buffer(
+                consumer_buffer_name, write_port_suffix)
+            if read_port:
+              producer_reads = True
+            if write_port:
+              consumer_writes = True
+          make_simple = False
+          if not producer_reads and not consumer_writes:
+            make_simple = True
         task.buffer_simplicities[buffer_name] = {
             "buffer_nature": make_simple,
             "producer_reads": producer_reads,

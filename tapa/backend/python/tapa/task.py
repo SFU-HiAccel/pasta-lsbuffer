@@ -295,8 +295,8 @@ class Task:
       raise ValueError(f'{buffer_name} is not {direction} any task')
     task_name, task_idx = self.buffers[buffer_name][direction]
     for port, arg in self.tasks[task_name][task_idx]['args'].items():
-      if arg['cat'] == self._DIR2CAT_BUFFER[direction] and arg[
-          'arg'] == buffer_name:
+      if  arg['cat'] == self._DIR2CAT_BUFFER[direction] and \
+          arg['arg'] == buffer_name:
         return task_name, task_idx, port
     raise ValueError(f'task {self.name} has inconsistent metadata')
 
