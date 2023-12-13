@@ -6,7 +6,7 @@ endif
 
 .PHONY: all cleanall clean cleanxo cleanhdl
 
-all: c xo
+all: c xo runxo
 
 c: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
 	@echo "[MAKE]: Compiling for C target"
@@ -22,13 +22,12 @@ endif
 
 ### INTERMEDIATE OUTPUTS
 ${KERNEL}: c
+${KERNEL}.${platform}.hw.xo: xo
 
 
 ### RUN STUFF
-
 runxo: ${KERNEL}.${platform}.hw.xo
 	./${KERNEL} --bitstream=${KERNEL}.${platform}.hw.xo
-
 
 
 ### CLEAN
