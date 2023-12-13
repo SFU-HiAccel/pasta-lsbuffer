@@ -256,8 +256,6 @@ def generate_laneswitches_ports(address_width, data_width, indices):
   # created slowly by `indices`, so...
   listindices = list(indices())
   _logger.debug("Generating %d laneswitches ports" % len(listindices))
-  info = [(f"switchbar", "input", str(len(listindices)), "wire")]
-  ports.extend(generate_ports_from_info(info))
   
   # generate tracking-fifo ports required for switching logic
   info = []
@@ -362,7 +360,7 @@ def generate_memcore_instances(dims, ram_style):
   for integer in dims():
     module_name = 'memcore_uram' if ram_style == "URAM" else "memcore_bram"
     instance_name = f'core_{integer}'
-    io_prefix = f'memcore_i{integer}'
+    io_prefix = f'memcores_i{integer}'
     items.append(
         generate_memcore_instance(module_name, instance_name, io_prefix))
   return items
@@ -455,11 +453,12 @@ def generate_laneswitches_module(module_name, data_width, address_width,
       generate_laneswitches_ports('ADDR_WIDTH', 'DATA_WIDTH', lambda: index_generator(dims)))
   ports = ast.Portlist(port_list)
   items = generate_laneswitch_instances(lambda: index_generator(dims))
-  # the way dims is initially used (as a lazy-iterable) makes it necessary to
-  # expand before it can be used as an integer
-  # dimswidth = str(len(list(index_generator(dims()))))
+
+  # create the switchbar register
+  dimswidth = str(count_dims(dims))
+  items.append(generate_decl("switchbar", "reg", dimswidth))
   
-  # ifelse in always block
+  # create te switchlogic's if-else statements
   total_switches = str(count_dims(dims))
   if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
   if_fifolane0read_true = ast.NonblockingSubstitution(
@@ -475,7 +474,7 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   if_fifolane1read = ast.IfStatement(cond=if_fifolane1read_cond,
                                      true_statement=ast.Block([if_fifolane1read_true]),
                                      false_statement=None)
-  # always@(posedge clk)
+  # put if-else statements in `always@(posedge clk)` block
   always_switchlogic_statement = ast.Block([if_fifolane0read, if_fifolane1read])
   always_switchlogic_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
   always_switchlogic = ast.Always(
