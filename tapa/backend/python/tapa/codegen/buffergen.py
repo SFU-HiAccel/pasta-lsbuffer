@@ -204,7 +204,8 @@ def generate_buffer_memory_ports(address_width, data_width, indices, hybrid=Fals
   ports = []
   for i in indices():
     for lane in ['producer', 'consumer']:
-      io_port_name = f"buffer_{str(lane)}_core{i}"
+      # tag: SYNTAX_PORT_BUFFER
+      io_port_name = f"buffer_core{i}{str(lane)}_"
       if(hybrid):
         ports.extend(
           generate_ap_memory_interface(io_port_name, address_width, data_width, memports=2))
@@ -242,6 +243,7 @@ def generate_lsmcw_decls(address_width, data_width, indices):
 def generate_memcores_memory_ports(address_width, data_width, indices):
   ports = []
   for i in indices():
+    # tag: SYNTAX_PORT_MEMCORES
     io_port_name = f"memcores_i{i}"
     ports.extend(
         generate_ap_memory_interface(io_port_name, address_width, data_width, memports=2))
@@ -400,6 +402,7 @@ def generate_laneswitch_instance(module_name, instance_name, io_prefix, index):
       # io_prefix has the form "_iN_", where N is index. [-2:][0] selects 'N' from the string
       ('switch', f'switchbar[{str(index)}]'),])
   for memport in range(2):
+    # tag: SYNTAX_PORT_LANESWITCHES
     ports.extend([
         (f'laneswitch_mem_address{str(memport)}',  f'laneswitches{io_prefix}mem_address{str(memport)}'),
         (f'laneswitch_mem_ce{str(memport)}',       f'laneswitches{io_prefix}mem_ce{str(memport)}'),
@@ -407,6 +410,7 @@ def generate_laneswitch_instance(module_name, instance_name, io_prefix, index):
         (f'laneswitch_mem_q{str(memport)}',        f'laneswitches{io_prefix}mem_q{str(memport)}'),
         (f'laneswitch_mem_d{str(memport)}',        f'laneswitches{io_prefix}mem_d{str(memport)}')])
   for memport in range(2):
+    # tag: SYNTAX_PORT_LANESWITCHES
     ports.extend([
         (f'laneswitch_lane0_address{str(memport)}',  f'laneswitches{io_prefix}lane0_address{str(memport)}'),
         (f'laneswitch_lane0_we{str(memport)}',       f'laneswitches{io_prefix}lane0_we{str(memport)}'),
@@ -414,6 +418,7 @@ def generate_laneswitch_instance(module_name, instance_name, io_prefix, index):
         (f'laneswitch_lane0_d{str(memport)}',        f'laneswitches{io_prefix}lane0_d{str(memport)}'),
         (f'laneswitch_lane0_q{str(memport)}',        f'laneswitches{io_prefix}lane0_q{str(memport)}')])
   for memport in range(2):
+    # tag: SYNTAX_PORT_LANESWITCHES
     ports.extend([
         (f'laneswitch_lane1_address{str(memport)}',  f'laneswitches{io_prefix}lane1_address{str(memport)}'),
         (f'laneswitch_lane1_we{str(memport)}',       f'laneswitches{io_prefix}lane1_we{str(memport)}'),
@@ -458,7 +463,24 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   dimswidth = str(count_dims(dims))
   items.append(generate_decl("switchbar", "reg", dimswidth))
   
-  # create te switchlogic's if-else statements
+  # create the reset condition (switchbar <= 0)
+  total_switches = str(count_dims(dims))
+  if_reset_cond = ast.Identifier('reset')
+  if_reset_true = ast.NonblockingSubstitution(
+                            ast.Lvalue(ast.Identifier('switchbar')),
+                            ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+  if_reset = ast.IfStatement(cond=if_reset_cond,
+                                     true_statement=ast.Block([if_reset_true]),
+                                     false_statement=None)
+  # put the statements in `always@(negedge reset)` block
+  always_resetlogic_statement = ast.Block([if_reset])
+  always_resetlogic_senslist = ast.Sens(ast.Identifier('reset'), type='negedge')
+  always_resetlogic = ast.Always(
+                          sens_list=always_resetlogic_senslist,
+                          statement=always_resetlogic_statement)
+  items.append(always_resetlogic)
+
+  # create the switchlogic's if-else statements
   total_switches = str(count_dims(dims))
   if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
   if_fifolane0read_true = ast.NonblockingSubstitution(
@@ -566,6 +588,7 @@ def generate_memcores_instance(module_name, instance_name, dims, level=None, hyb
   if(hybrid): # hybrid buffer. Connect `memcores` to `laneswitches`.
     for prefix in index_generator(dims):
       for memport in range(2):
+        # tag: SYNTAX_PORT_MEMCORES, SYNTAX_DECL_LANESWITCHES
         ports.extend([
           (f'memcores_i{prefix}address{str(memport)}', f'locsig_i{prefix}laneswitches_memcores_address{str(memport)}'),
           (f'memcores_i{prefix}we{str(memport)}',      f'locsig_i{prefix}laneswitches_memcores_we{str(memport)}'),
@@ -575,17 +598,18 @@ def generate_memcores_instance(module_name, instance_name, dims, level=None, hyb
       ])
   else: # standard buffer. Connect `memcores` with prod/cons (1 port each)
     for prefix in index_generator(dims):
+      # tag: SYNTAX_PORT_MEMCORES, SYNTAX_PORT_BUFFER
       ports.extend([
-        (f'memcores_i{prefix}address0', f'buffer_producer_core{prefix}address0'),
-        (f'memcores_i{prefix}we0',      f'buffer_producer_core{prefix}we0'),
-        (f'memcores_i{prefix}ce0',      f'buffer_producer_core{prefix}ce0'),
-        (f'memcores_i{prefix}d0',       f'buffer_producer_core{prefix}d0'),
-        (f'memcores_i{prefix}q0',       f'buffer_producer_core{prefix}q0'),
-        (f'memcores_i{prefix}address1', f'buffer_consumer_core{prefix}address0'),
-        (f'memcores_i{prefix}we1',      f'buffer_consumer_core{prefix}we0'),
-        (f'memcores_i{prefix}ce1',      f'buffer_consumer_core{prefix}ce0'),
-        (f'memcores_i{prefix}d1',       f'buffer_consumer_core{prefix}d0'),
-        (f'memcores_i{prefix}q1',       f'buffer_consumer_core{prefix}q0'),
+        (f'memcores_i{prefix}address0', f'buffer_core{prefix}producer_address0'),
+        (f'memcores_i{prefix}we0',      f'buffer_core{prefix}producer_we0'),
+        (f'memcores_i{prefix}ce0',      f'buffer_core{prefix}producer_ce0'),
+        (f'memcores_i{prefix}d0',       f'buffer_core{prefix}producer_d0'),
+        (f'memcores_i{prefix}q0',       f'buffer_core{prefix}producer_q0'),
+        (f'memcores_i{prefix}address1', f'buffer_core{prefix}consumer_address0'),
+        (f'memcores_i{prefix}we1',      f'buffer_core{prefix}consumer_we0'),
+        (f'memcores_i{prefix}ce1',      f'buffer_core{prefix}consumer_ce0'),
+        (f'memcores_i{prefix}d1',       f'buffer_core{prefix}consumer_d0'),
+        (f'memcores_i{prefix}q1',       f'buffer_core{prefix}consumer_q0'),
       ])
   return generate_instance(module_name, instance_name, params_list, ports)
 
@@ -605,6 +629,7 @@ def generate_laneswitches_instance(module_name, instance_name, dims, level=None)
   ports.extend([(f'fifo_to_lane1_read',f'fifo_occupied_buffers_read')])
   for prefix in index_generator(dims):
     for memport in range(2):
+      # tag: SYNTAX_PORT_LANESWITCHES, SYNTAX_DECL_LANESWITCHES
       ports.extend([
           (f'laneswitches_i{prefix}mem_address{str(memport)}',  f'locsig_i{prefix}laneswitches_memcores_address{str(memport)}'),
           (f'laneswitches_i{prefix}mem_we{str(memport)}',       f'locsig_i{prefix}laneswitches_memcores_we{str(memport)}'),
@@ -612,19 +637,21 @@ def generate_laneswitches_instance(module_name, instance_name, dims, level=None)
           (f'laneswitches_i{prefix}mem_d{str(memport)}',        f'locsig_i{prefix}laneswitches_memcores_d{str(memport)}'),
           (f'laneswitches_i{prefix}mem_q{str(memport)}',        f'locsig_i{prefix}laneswitches_memcores_q{str(memport)}')])
     for memport in range(2):
+      # tag: SYNTAX_PORT_BUFFER, SYNTAX_PORT_LANESWITCHES
       ports.extend([
-          (f'laneswitches_i{prefix}lane0_address{str(memport)}', f'buffer_producer_core{prefix}address{str(memport)}'),
-          (f'laneswitches_i{prefix}lane0_we{str(memport)}',      f'buffer_producer_core{prefix}we{str(memport)}'),
-          (f'laneswitches_i{prefix}lane0_ce{str(memport)}',      f'buffer_producer_core{prefix}ce{str(memport)}'),
-          (f'laneswitches_i{prefix}lane0_d{str(memport)}',       f'buffer_producer_core{prefix}d{str(memport)}'),
-          (f'laneswitches_i{prefix}lane0_q{str(memport)}',       f'buffer_producer_core{prefix}q{str(memport)}')])
+          (f'laneswitches_i{prefix}lane0_address{str(memport)}', f'buffer_core{prefix}producer_address{str(memport)}'),
+          (f'laneswitches_i{prefix}lane0_we{str(memport)}',      f'buffer_core{prefix}producer_we{str(memport)}'),
+          (f'laneswitches_i{prefix}lane0_ce{str(memport)}',      f'buffer_core{prefix}producer_ce{str(memport)}'),
+          (f'laneswitches_i{prefix}lane0_d{str(memport)}',       f'buffer_core{prefix}producer_d{str(memport)}'),
+          (f'laneswitches_i{prefix}lane0_q{str(memport)}',       f'buffer_core{prefix}producer_q{str(memport)}')])
     for memport in range(2):
+      # tag: SYNTAX_PORT_BUFFER, SYNTAX_PORT_LANESWITCHES
       ports.extend([
-          (f'laneswitches_i{prefix}lane1_address{str(memport)}', f'buffer_consumer_core{prefix}address{str(memport)}'),
-          (f'laneswitches_i{prefix}lane1_we{str(memport)}',      f'buffer_consumer_core{prefix}we{str(memport)}'),
-          (f'laneswitches_i{prefix}lane1_ce{str(memport)}',      f'buffer_consumer_core{prefix}ce{str(memport)}'),
-          (f'laneswitches_i{prefix}lane1_d{str(memport)}',       f'buffer_consumer_core{prefix}d{str(memport)}'),
-          (f'laneswitches_i{prefix}lane1_q{str(memport)}',       f'buffer_consumer_core{prefix}q{str(memport)}')])
+          (f'laneswitches_i{prefix}lane1_address{str(memport)}', f'buffer_core{prefix}consumer_address{str(memport)}'),
+          (f'laneswitches_i{prefix}lane1_we{str(memport)}',      f'buffer_core{prefix}consumer_we{str(memport)}'),
+          (f'laneswitches_i{prefix}lane1_ce{str(memport)}',      f'buffer_core{prefix}consumer_ce{str(memport)}'),
+          (f'laneswitches_i{prefix}lane1_d{str(memport)}',       f'buffer_core{prefix}consumer_d{str(memport)}'),
+          (f'laneswitches_i{prefix}lane1_q{str(memport)}',       f'buffer_core{prefix}consumer_q{str(memport)}')])
   return generate_instance(module_name, instance_name, params_list, ports)
 
 
