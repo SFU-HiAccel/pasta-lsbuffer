@@ -3,7 +3,7 @@
 ##----------
 ## Conda Installation
 ##----------
-CONDA_PATH=$(which conda)
+CONDA_PATH=${CONDA_EXE}
 if [[ $CONDA_PATH == "" ]]; then
 	echo "ERROR: Conda isn't installed."
 	exit
