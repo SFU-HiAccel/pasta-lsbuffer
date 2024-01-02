@@ -12,14 +12,14 @@ all: c xo runxo
 c: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
 	@echo "[MAKE]: Compiling for C target"
 	g++ -o ${KERNEL} -O2 src/${KERNEL}.cpp src/${KERNEL}-host.cpp -I${XILINX_HLS}/include -ltapa -lfrt -lglog -lgflags -lOpenCL -DTAPA_BUFFER_SUPPORT -std=c++17
-	./${KERNEL} ${KERNEL_ARGS}
+#	./${KERNEL} ${KERNEL_ARGS}
 
 xo: ${KERNEL}
 ifndef platform
 $(error No platform is set!)
 endif
 	@echo "[MAKE]: Compiling for XO target"
-	tapac -o ${KERNEL}.${platform}.hw.xo src/${KERNEL}.cpp --platform ${platform} --top ${KERNEL_TOP} --work-dir ${KERNEL}.${platform}.hw.xo.tapa --enable-buffer-support
+	tapac -vv -o ${KERNEL}.${platform}.hw.xo src/${KERNEL}.cpp --platform ${platform} --top ${KERNEL_TOP} --work-dir ${KERNEL}.${platform}.hw.xo.tapa --enable-buffer-support
 
 
 ### INTERMEDIATE OUTPUTS
@@ -69,13 +69,25 @@ runxovdbg: ${KERNEL}.${platform}.hw.xo
 
 
 ### CLEAN
-cleanall: clean cleanxo
+cleanall: clean cleanxo cleandbg
 	@echo "[MAKE]: CLEANING ALL FILES!"
 
 clean:
 	rm -f ${KERNEL}
 
 cleanxo:
+	rm -f ${KERNEL}.${platform}.hw_emu*
+	rm -f ${KERNEL}.${platform}.hw.xo
+	rm -f ${KERNEL}.${platform}.hw_generate_bitstream.sh
+	rm -f *.log
+	rm -rf ${KERNEL}.${platform}.hw.xo.tapa
+	rm -rf _x
+
+cleandbg:
+	rm -f vivado*.jou
+	rm -f vivado*.log
+	rm -rf vivado
+	rm -rf xosim
 	rm -f ${KERNEL}.${platform}.hw.xo
 	rm -rf ${KERNEL}.${platform}.hw.xo.tapa
 
