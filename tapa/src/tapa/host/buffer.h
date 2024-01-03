@@ -92,7 +92,7 @@ class basic_buffer {
 /// as an @a input
 ///
 /// This class should only be used in task function parameters and should never
-/// be instatiated directly.
+/// be instantiated directly.
 //
 /// Example usage as follows.
 /// ```cpp
