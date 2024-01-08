@@ -32,22 +32,23 @@ COMPUTE_LOOP:
 //////////////////
 
 
-// void load(tapa::mmap<const data_type_mmap> vector,
-//           tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_load,
-//           int n_tiles) {
-//   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
-//     #pragma HLS pipeline off
-//     auto section = buffer_load.acquire();
-//     auto& buf_ref = section();
-//     data_type temp;
-//     for (int j = 0; j < TILE/2; j++) {
-//       #pragma HLS pipeline II=1
-//       // #pragma HLS unroll factor=2
-//       buf_ref[2*j] = vector[tile_id * TILE + j][0];
-//       buf_ref[2*j+1] = vector[tile_id * TILE + j][1];
-//     }
-//   }
-// }
+void load(tapa::mmap<const data_type_mmap> argmmap,
+          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_load,
+          int n_tiles) {
+  for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
+    #pragma HLS pipeline off
+    auto section = buffer_load.acquire();
+    auto& buf_ref = section();
+    data_type temp;
+    for (int j = 0; j < TILE/PACK_LENGTH; j++) {
+      #pragma HLS pipeline II=1
+      // #pragma HLS unroll factor=2
+      data_type_mmap packvec = argmmap[tile_id*TILE/(PACK_LENGTH) + j];
+      buf_ref[2*j] = packvec[0];
+      buf_ref[2*j+1] = packvec[1];
+    }
+  }
+}
 
 void loadStream(tapa::istream<data_type>& a0,
           tapa::istream<data_type>& a1,
@@ -73,9 +74,9 @@ void Mmap2Stream(tapa::mmap<const data_type_mmap> argmmap,
                  tapa::ostream<data_type>& stream0,
                  tapa::ostream<data_type>& stream1) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
-    for (uint64_t i = 0; i < (TILE/2); i++) {
+    for (uint64_t i = 0; i < (TILE/PACK_LENGTH); i++) {
       // i is the index of the mmap stream (type = data_type_mmap)
-      data_type_mmap packvec = argmmap[tile_id*TILE + i];
+      data_type_mmap packvec = argmmap[tile_id*TILE/(PACK_LENGTH) + i];
       stream0 << packvec[0];
       stream1 << packvec[1];
       // uint64_t temp = mmap[tile_id*TILE + i];
@@ -104,16 +105,19 @@ void Mmap2Stream(tapa::mmap<const data_type_mmap> argmmap,
 //////////////////
 /// STORE
 //////////////////
-void store(tapa::mmap<data_type_mmap> vector,
-           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_c,
+void store(tapa::mmap<data_type_mmap> argmmap,
+           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_store,
            int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
 #pragma HLS pipeline off
-    auto section = buffer_c.acquire();
-    auto& buf_rf = section();
-    for (int j = 0; j < TILE; j++) {
+    auto section = buffer_store.acquire();
+    auto& buf_ref = section();
+    for (int j = 0; j < TILE/PACK_LENGTH; j++) {
 #pragma HLS pipeline II=1
-      vector[tile_id*TILE + j] = buf_rf[j];
+      data_type_mmap packvec;
+      packvec[0] = buf_ref[2*j];
+      packvec[1] = buf_ref[2*j+1];
+      argmmap[tile_id*TILE/(PACK_LENGTH) + j] = packvec;
     }
   }
 }
@@ -130,7 +134,7 @@ void Stream2Mmap(tapa::istream<data_type>& stream0,
       // {
         stream0 >> packvec[0];
         stream1 >> packvec[1];
-        argmmap[tile_id*TILE + blk] = packvec;
+        argmmap[tile_id*TILE/(PACK_LENGTH) + blk] = packvec;
       // }
     }
   }
@@ -170,11 +174,14 @@ void VecAdd(tapa::mmap<const data_type_mmap> vector_a,
   tapa::stream<data_type> c_q0("c0");
   tapa::stream<data_type> c_q1("c1");
   tapa::task()
-    .invoke(Mmap2Stream, vector_a, n_tiles, a_q0, a_q1)
-    .invoke(loadStream, a_q0, a_q1, buffer_a, n_tiles)
-    .invoke(Mmap2Stream, vector_b, n_tiles, b_q0, b_q1)
-    .invoke(loadStream, b_q0, b_q1, buffer_b, n_tiles)
+    .invoke(load, vector_a, buffer_a, n_tiles)
+    .invoke(load, vector_b, buffer_b, n_tiles)
+    // .invoke(Mmap2Stream, vector_a, n_tiles, a_q0, a_q1)
+    // .invoke(loadStream, a_q0, a_q1, buffer_a, n_tiles)
+    // .invoke(Mmap2Stream, vector_b, n_tiles, b_q0, b_q1)
+    // .invoke(loadStream, b_q0, b_q1, buffer_b, n_tiles)
     .invoke(vadd, buffer_a, buffer_b, buffer_c, n_tiles)
-    .invoke(storeStream, c_q0, c_q1, buffer_c, n_tiles)
-    .invoke(Stream2Mmap, c_q0, c_q1, vector_c, n_tiles);
+    // .invoke(storeStream, c_q0, c_q1, buffer_c, n_tiles)
+    // .invoke(Stream2Mmap, c_q0, c_q1, vector_c, n_tiles)
+    .invoke(store, vector_c, buffer_c, n_tiles);
 }
