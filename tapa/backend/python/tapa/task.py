@@ -29,6 +29,7 @@ class Task:
     code: str, HLS C++ code of this task.
     tasks: A dict mapping child task names to json instance description objects.
     fifos: A dict mapping child fifo names to json FIFO description objects.
+    fifos: A dict mapping child buffer names to json buffer description objects.
     ports: A dict mapping port names to Port objects for the current task.
     module: rtl.Module, should be attached after RTL code is generated.
 

@@ -461,34 +461,57 @@ def generate_laneswitches_module(module_name, data_width, address_width,
 
   # create the switchbar register
   dimswidth = str(count_dims(dims))
-  items.append(generate_decl("switchbar", "reg", dimswidth))
-  
+  # Unfortunately, we can't go ahead with writing a simple declaration
+  # followed by a `negedge reset` bootstrap (commented below)
+  # because it leads to a problem in synthesis if the Testbench never pulses the
+  # reset. The synthesis will complain that the event for the negedge reset doesn't exist.
+  # Positive resets cannot be used because the AXI depends on negative resets.
+  decl_reg_switchbar = generate_decl("switchbar", "reg", dimswidth)
+  items.append(decl_reg_switchbar)
   # create the reset condition (switchbar <= 0)
   total_switches = str(count_dims(dims))
-  if_reset_cond = ast.Identifier('reset')
+  if_reset_cond = ast.Unot(ast.Identifier('reset'))
   if_reset_true = ast.NonblockingSubstitution(
-                            ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+                           ast.Lvalue(ast.Identifier('switchbar')),
+                           ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
   if_reset = ast.IfStatement(cond=if_reset_cond,
-                                     true_statement=ast.Block([if_reset_true]),
-                                     false_statement=None)
+                                    true_statement=ast.Block([if_reset_true]),
+                                    false_statement=None)
   # put the statements in `always@(negedge reset)` block
-  always_resetlogic_statement = ast.Block([if_reset])
+  # always_resetlogic_statement = ast.Block([if_reset])
+  # we don't need the `if_reset` since assignment should happen on every negedge reset.
+  always_resetlogic_statement = ast.Block([if_reset_true])
   always_resetlogic_senslist = ast.Sens(ast.Identifier('reset'), type='negedge')
   always_resetlogic = ast.Always(
-                          sens_list=always_resetlogic_senslist,
-                          statement=always_resetlogic_statement)
+                         sens_list=always_resetlogic_senslist,
+                         statement=always_resetlogic_statement)
   items.append(always_resetlogic)
+
+  # burr= generate_decl
+  # _width = ast.Width(ast.Minus(ast.Identifier(dimswidth), ast.IntConst('1')), ast.IntConst('0'))
+  # decl_reg_switchbar = ast.Reg(name="switchbar", width=_width)
+  # temp = ast.Identifier(f"switchbar {str(_width.show)")
+  # init_reg_switchbar = ast.BlockingSubstitution(left=temp, right=ast.IntConst(42))
+  # items.append(init_reg_switchbar)
 
   # create the switchlogic's if-else statements
   total_switches = str(count_dims(dims))
-  if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
-  if_fifolane0read_true = ast.NonblockingSubstitution(
-                            ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
-  if_fifolane0read = ast.IfStatement(cond=if_fifolane0read_cond,
-                                     true_statement=ast.Block([if_fifolane0read_true]),
-                                     false_statement=None)
+
+  # The intention is to write something like this:
+  #
+  # if(fifo_to_lane0_read) begin
+  #   switchbar <= 1'b0;
+  # end
+  # else if(fifo_to_lane1_read) begin
+  #   switchbar <= 1'b1;
+  # end
+  #
+  # The `else-if` is required, otherwise switchbar will be recognised as a signal
+  # with multiple drivers, which will fail synthesis. Ideally, this should be
+  # done with a state machine, but there are only two states.
+  # But PyHDL AST doesn't support if-else-if, only if-else.
+  # So the way to implement it would be to have the second `if` inside the
+  # first `if`'s `else` block. This is what the next few lines try to do.
   if_fifolane1read_cond = ast.Identifier('fifo_to_lane1_read')
   if_fifolane1read_true = ast.NonblockingSubstitution(
                             ast.Lvalue(ast.Identifier('switchbar')),
@@ -496,8 +519,17 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   if_fifolane1read = ast.IfStatement(cond=if_fifolane1read_cond,
                                      true_statement=ast.Block([if_fifolane1read_true]),
                                      false_statement=None)
+  if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
+  if_fifolane0read_true = ast.NonblockingSubstitution(
+                            ast.Lvalue(ast.Identifier('switchbar')),
+                            ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+  if_fifolane0read = ast.IfStatement(cond=if_fifolane0read_cond,
+                                     true_statement=ast.Block([if_fifolane0read_true]),
+                                     false_statement=if_fifolane1read)
+
   # put if-else statements in `always@(posedge clk)` block
-  always_switchlogic_statement = ast.Block([if_fifolane0read, if_fifolane1read])
+  # always_switchlogic_statement = ast.Block([if_fifolane0read, if_fifolane1read])
+  always_switchlogic_statement = ast.Block([if_fifolane0read])
   always_switchlogic_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
   always_switchlogic = ast.Always(
                           sens_list=always_switchlogic_senslist,
