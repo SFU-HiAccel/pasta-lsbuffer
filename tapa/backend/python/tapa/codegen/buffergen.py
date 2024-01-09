@@ -80,14 +80,17 @@ def index_generator(factors):
         indices[i] += 1
         break
 
+# shorthand for returning ast.Width given a string width
+def astwidth(width: str):
+  return ast.Width(ast.Minus(ast.Identifier(width), ast.IntConst('1')),
+                    ast.IntConst('0'))
 
 # generates an input/output module wire of a certain width
 # and direction
 def generate_io_wire(name, direction, width=None):
   kwargs = {"name": name}
   if width is not None:
-    kwargs["width"] = ast.Width(
-        ast.Minus(ast.Identifier(width), ast.IntConst('1')), ast.IntConst('0'))
+    kwargs["width"] = astwidth(width)
   if direction == "input":
     cls = ast.Input
   else:
@@ -100,8 +103,7 @@ def generate_io_wire(name, direction, width=None):
 def generate_io_reg(name, direction, width=None):
   kwargs = {"name": name}
   if width is not None:
-    kwargs["width"] = ast.Width(
-        ast.Minus(ast.Identifier(width), ast.IntConst('1')), ast.IntConst('0'))
+    kwargs["width"] = astwidth(width)
   if direction == "input":
     cls = ast.Input
   else:
@@ -116,8 +118,7 @@ def generate_decl(name, decl_type, width=None, length=None):
   else:
     cls = ast.Wire
   if width is not None:
-    width = ast.Width(ast.Minus(ast.Identifier(width), ast.IntConst('1')),
-                      ast.IntConst('0'))
+    width = astwidth(width)
   if length is not None:
     #length = ast.Dimensions((ast.Length(ast.Minus(ast.Identifier(length), ast.IntConst('1')), ast.IntConst('0')),))
     length = ast.Dimensions((ast.Length(ast.Identifier(length),
@@ -459,85 +460,83 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   ports = ast.Portlist(port_list)
   items = generate_laneswitch_instances(lambda: index_generator(dims))
 
-  # create the switchbar register
+  ### BEGIN DECLARATIONS ###
+  # switchbar register
   dimswidth = str(count_dims(dims))
-  # Unfortunately, we can't go ahead with writing a simple declaration
-  # followed by a `negedge reset` bootstrap (commented below)
-  # because it leads to a problem in synthesis if the Testbench never pulses the
-  # reset. The synthesis will complain that the event for the negedge reset doesn't exist.
-  # Positive resets cannot be used because the AXI depends on negative resets.
+  total_switches = str(count_dims(dims))
   decl_reg_switchbar = generate_decl("switchbar", "reg", dimswidth)
   items.append(decl_reg_switchbar)
-  # create the reset condition (switchbar <= 0)
-  total_switches = str(count_dims(dims))
-  if_reset_cond = ast.Unot(ast.Identifier('reset'))
-  if_reset_true = ast.NonblockingSubstitution(
-                           ast.Lvalue(ast.Identifier('switchbar')),
-                           ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
-  if_reset = ast.IfStatement(cond=if_reset_cond,
-                                    true_statement=ast.Block([if_reset_true]),
-                                    false_statement=None)
-  # put the statements in `always@(negedge reset)` block
-  # always_resetlogic_statement = ast.Block([if_reset])
-  # we don't need the `if_reset` since assignment should happen on every negedge reset.
-  always_resetlogic_statement = ast.Block([if_reset_true])
-  always_resetlogic_senslist = ast.Sens(ast.Identifier('reset'), type='negedge')
-  always_resetlogic = ast.Always(
-                         sens_list=always_resetlogic_senslist,
-                         statement=always_resetlogic_statement)
-  items.append(always_resetlogic)
 
-  # burr= generate_decl
-  # _width = ast.Width(ast.Minus(ast.Identifier(dimswidth), ast.IntConst('1')), ast.IntConst('0'))
-  # decl_reg_switchbar = ast.Reg(name="switchbar", width=_width)
-  # temp = ast.Identifier(f"switchbar {str(_width.show)")
-  # init_reg_switchbar = ast.BlockingSubstitution(left=temp, right=ast.IntConst(42))
-  # items.append(init_reg_switchbar)
+  # FSM related declarations
+  thisstate = ast.Identifier('this_state')
+  nextstate = ast.Identifier('next_state')
+  state_LANE0 = ast.Identifier('LANE0')
+  state_LANE1 = ast.Identifier('LANE1')
+  items.append(ast.Decl([ast.Reg('this_state',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b00")))]))
+  items.append(ast.Decl([ast.Reg('next_state',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b01")))]))
+  items.append(ast.Decl([ast.Localparam('LANE0',ast.Rvalue(ast.Value("2\'b00")))]))
+  items.append(ast.Decl([ast.Localparam('LANE1',ast.Rvalue(ast.Value("2\'b01")))]))
+  ### END DECLARATIONS ###
 
-  # create the switchlogic's if-else statements
-  total_switches = str(count_dims(dims))
-
-  # The intention is to write something like this:
-  #
-  # if(fifo_to_lane0_read) begin
-  #   switchbar <= 1'b0;
-  # end
-  # else if(fifo_to_lane1_read) begin
-  #   switchbar <= 1'b1;
-  # end
-  #
-  # The `else-if` is required, otherwise switchbar will be recognised as a signal
-  # with multiple drivers, which will fail synthesis. Ideally, this should be
-  # done with a state machine, but there are only two states.
-  # But PyHDL AST doesn't support if-else-if, only if-else.
-  # So the way to implement it would be to have the second `if` inside the
-  # first `if`'s `else` block. This is what the next few lines try to do.
+  ### BEGIN FSM ###
+  # create the cases' if-else statements
   if_fifolane1read_cond = ast.Identifier('fifo_to_lane1_read')
   if_fifolane1read_true = ast.NonblockingSubstitution(
                             ast.Lvalue(ast.Identifier('switchbar')),
                             ast.Rvalue(ast.Value(f'{total_switches}\'b1')))
+  stateswitch_LANE1 = ast.NonblockingSubstitution(ast.Lvalue(nextstate),
+                                                  ast.Rvalue(state_LANE1))
   if_fifolane1read = ast.IfStatement(cond=if_fifolane1read_cond,
-                                     true_statement=ast.Block([if_fifolane1read_true]),
+                                     true_statement=ast.Block([if_fifolane1read_true, stateswitch_LANE1]),
                                      false_statement=None)
   if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
   if_fifolane0read_true = ast.NonblockingSubstitution(
                             ast.Lvalue(ast.Identifier('switchbar')),
                             ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+  stateswitch_LANE0 = ast.NonblockingSubstitution(ast.Lvalue(nextstate),
+                                                  ast.Rvalue(state_LANE0))
   if_fifolane0read = ast.IfStatement(cond=if_fifolane0read_cond,
-                                     true_statement=ast.Block([if_fifolane0read_true]),
-                                     false_statement=if_fifolane1read)
-
-  # put if-else statements in `always@(posedge clk)` block
-  # always_switchlogic_statement = ast.Block([if_fifolane0read, if_fifolane1read])
-  always_switchlogic_statement = ast.Block([if_fifolane0read])
+                                     true_statement=ast.Block([if_fifolane0read_true, stateswitch_LANE0]),
+                                     false_statement=None)
+  # create the individual case statements
+  case_LANE0_statements = ast.Block([if_fifolane1read])
+  case_LANE1_statements = ast.Block([if_fifolane0read])
+  case_LANE0 = ast.Case([state_LANE0],case_LANE0_statements)
+  case_LANE1 = ast.Case([state_LANE1],case_LANE1_statements)
+  # create main FSM
+  caseblock_mainfsm = ast.CaseStatement(thisstate,([case_LANE0, case_LANE1]))
+  always_switchlogic_statement = ast.Block([caseblock_mainfsm])
   always_switchlogic_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
   always_switchlogic = ast.Always(
                           sens_list=always_switchlogic_senslist,
                           statement=always_switchlogic_statement)
   items.append(always_switchlogic)
+
+  # create FSM driver (this_state <= next_state)
+  always_fsmdrive_statement = ast.NonblockingSubstitution(ast.Lvalue(thisstate),
+                                                          ast.Rvalue(nextstate))
+   ### BEGIN RESET ###
+  # create the reset condition (next_state <= LANE0)
+  if_reset_cond = ast.Identifier('reset')
+  if_reset_true = ast.NonblockingSubstitution(
+                           ast.Lvalue(ast.Identifier('next_state')),
+                           ast.Rvalue(state_LANE0))
+  bootstrap_switchbar = ast.NonblockingSubstitution(ast.Lvalue(ast.Identifier('switchbar')),
+                                                    ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+  resetlogic_statement = ast.Block([if_reset_true, bootstrap_switchbar])
+  ### END RESET ###
+
+  always_fsmdrive_block = ast.IfStatement(cond=if_reset_cond,
+                                    true_statement=resetlogic_statement,
+                                    false_statement=ast.Block([always_fsmdrive_statement]))
+  always_fsmdrive_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
+  always_fsmdrive = ast.Always(
+                          sens_list=always_fsmdrive_senslist,
+                          statement=ast.Block([always_fsmdrive_block]))
+  items.append(always_fsmdrive)
+  ### END FSM ###
+
   return ast.ModuleDef(module_name, params, ports, items)
-
-
 
 ###############################################################################
 ###############################################################################
