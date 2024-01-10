@@ -1,0 +1,51 @@
+###########################################################################
+##	PROJECT-SPECIFIC
+###########################################################################
+# Do NOT ignore sources
+!*.c
+!*.h
+!*.elf
+!*.bmm
+!*.v
+!**/Makefile
+
+
+###########################################################################
+##	TAPA OBJECTS
+###########################################################################
+
+*.xo.tapa
+*.xo
+*hw_generate_bitstream.sh
+
+###########################################################################
+##	VIVADO OBJECTS
+###########################################################################
+
+# Log files:
+*.jou
+*.log
+
+# Output artefacts
+*.xclbin*
+*.dcp
+*.prj
+*.xpr
+**/.ipcache
+*xsim.dir
+
+# Do NOT ignore VHDL, Verilog, block diagrams or EDIF files.
+!*.vhd
+!*.v
+!*.bd
+!*.edif
+
+# Do NOT ignore simulator configurations
+!*.wcfg
+!*.coe
+
+# Do NOT ignore mem files
+!*.mem
+
+# Do NOT ignore Constraint files
+!*.xdc
