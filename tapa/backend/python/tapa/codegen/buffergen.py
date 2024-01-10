@@ -4,6 +4,55 @@ from math import ceil, log2
 
 from pyverilog.ast_code_generator import codegen
 from pyverilog.vparser import ast, parser
+import tapa.util
+
+import logging
+_logger = logging.getLogger().getChild(__name__)
+
+###############################################################################
+###############################################################################
+### LOCAL HELPER FUNTIONS
+###############################################################################
+
+# generate non-blocking assignment
+def generate_non_blocking_assignment(left, right):
+  return ast.NonblockingSubstitution(ast.Lvalue(ast.Identifier(left)),
+                                     ast.Rvalue(ast.Identifier(right)))
+
+
+# generate an always block given a sensitivity type, name of signal and
+# statements
+def generate_always_block(sens_type, sens_signal, statements):
+  return ast.Always(
+      ast.SensList((ast.Sens(ast.Identifier(sens_signal), sens_type),)),
+      ast.Block(statements))
+
+
+# generate a Verilog file from the module object
+def module_to_file(module, filename):
+  output = codegen.ASTCodeGenerator().visit(module)
+  with open(filename, "w") as fd:
+    fd.write("`default_nettype none\n")
+    fd.write(output)
+    fd.write("`default_nettype wire\n")
+
+
+# generate string output from multiple modules
+def modules_to_str(modules):
+  generator = codegen.ASTCodeGenerator()
+  output = ''
+  for module in modules:
+    output += generator.visit(module)
+    output += '\n'
+  return output
+
+
+# count total items in dims array
+def count_dims(factors):
+  total_items = 1
+  for index in factors:
+    total_items *= index
+  return total_items
 
 
 # takes dimensions array and creates a generator that gives
@@ -13,9 +62,7 @@ from pyverilog.vparser import ast, parser
 def index_generator(factors):
   no_factors = len(factors)
   indices = [0] * len(factors)
-  total_items = 1
-  for index in factors:
-    total_items *= index
+  total_items = count_dims(factors)
   for n in range(total_items):
     to_yield = []
     for i, factor in enumerate(factors):
@@ -33,14 +80,17 @@ def index_generator(factors):
         indices[i] += 1
         break
 
+# shorthand for returning ast.Width given a string width
+def astwidth(width: str):
+  return ast.Width(ast.Minus(ast.Identifier(width), ast.IntConst('1')),
+                    ast.IntConst('0'))
 
 # generates an input/output module wire of a certain width
 # and direction
 def generate_io_wire(name, direction, width=None):
   kwargs = {"name": name}
   if width is not None:
-    kwargs["width"] = ast.Width(
-        ast.Minus(ast.Identifier(width), ast.IntConst('1')), ast.IntConst('0'))
+    kwargs["width"] = astwidth(width)
   if direction == "input":
     cls = ast.Input
   else:
@@ -53,8 +103,7 @@ def generate_io_wire(name, direction, width=None):
 def generate_io_reg(name, direction, width=None):
   kwargs = {"name": name}
   if width is not None:
-    kwargs["width"] = ast.Width(
-        ast.Minus(ast.Identifier(width), ast.IntConst('1')), ast.IntConst('0'))
+    kwargs["width"] = astwidth(width)
   if direction == "input":
     cls = ast.Input
   else:
@@ -69,8 +118,7 @@ def generate_decl(name, decl_type, width=None, length=None):
   else:
     cls = ast.Wire
   if width is not None:
-    width = ast.Width(ast.Minus(ast.Identifier(width), ast.IntConst('1')),
-                      ast.IntConst('0'))
+    width = astwidth(width)
   if length is not None:
     #length = ast.Dimensions((ast.Length(ast.Minus(ast.Identifier(length), ast.IntConst('1')), ast.IntConst('0')),))
     length = ast.Dimensions((ast.Length(ast.Identifier(length),
@@ -96,12 +144,21 @@ def generate_ports_from_info(info):
 
 # given a certain prefix, address width and data width, generate
 # ap_memory ports
-def generate_ap_memory_interface(prefix, address_width, data_width):
-  info = [(f"{prefix}_address", "input", address_width, "wire"),
-          (f"{prefix}_d", "input", data_width, "wire"),
-          (f"{prefix}_q", "output", data_width, "wire"),
-          (f"{prefix}_ce", "input", None, "wire"),
-          (f"{prefix}_we", "input", None, "wire")]
+def generate_ap_memory_interface(prefix, address_width, data_width, memports=1):
+  info = []
+  if (memports == 1):
+    info.extend([(f"{prefix}address0", "input", address_width, "wire"),
+            (f"{prefix}d0", "input", data_width, "wire"),
+            (f"{prefix}q0", "output", data_width, "wire"),
+            (f"{prefix}ce0", "input", None, "wire"),
+            (f"{prefix}we0", "input", None, "wire")])
+  else:
+    for memport in range(memports):
+      info.extend([(f"{prefix}address{str(memport)}", "input", address_width, "wire"),
+              (f"{prefix}d{str(memport)}", "input", data_width, "wire"),
+              (f"{prefix}q{str(memport)}", "output", data_width, "wire"),
+              (f"{prefix}ce{str(memport)}", "input", None, "wire"),
+              (f"{prefix}we{str(memport)}", "input", None, "wire")])
   return generate_ports_from_info(info)
 
 
@@ -144,19 +201,93 @@ def generate_registered_ap_memory_interface(prefix, address_width, data_width,
 
 # given an indices array, address_width and data_width, generate both the
 # producer and consumer side memory ports
-def generate_buffer_memory_ports(address_width, data_width, indices):
+def generate_buffer_memory_ports(address_width, data_width, indices, hybrid=False):
   ports = []
   for i in indices():
-    producer_name = f"mem_{i}producer"
-    consumer_name = f"mem_{i}consumer"
-    ports.extend(
-        generate_ap_memory_interface(producer_name, address_width, data_width))
-    ports.extend(
-        generate_ap_memory_interface(consumer_name, address_width, data_width))
+    for lane in ['producer', 'consumer']:
+      # tag: SYNTAX_PORT_BUFFER
+      io_port_name = f"buffer_core{i}{str(lane)}_"
+      if(hybrid):
+        ports.extend(
+          generate_ap_memory_interface(io_port_name, address_width, data_width, memports=2))
+      else:
+        ports.extend(
+          generate_ap_memory_interface(io_port_name, address_width, data_width, memports=1))
   return ports
 
 
-# TODO: below two functions seem to be identical, no idea why I wrote it with two
+# expand on the laneswitch-memcores-wiring info to get the actual AST
+def generate_lsmcw_wires(prefix, address_width, data_width):
+  info = []
+  for memport in range(2):   # laneswitch is always implemented with 2 ports
+    memport = str(memport)
+    info.extend([(f"{prefix}_address{memport}",'wire',address_width),
+                  (f"{prefix}_d{memport}",'wire',data_width),
+                  (f"{prefix}_q{memport}",'wire',data_width),
+                  (f"{prefix}_ce{memport}",'wire',None),
+                  (f"{prefix}_we{memport}",'wire',None),])
+  decls = []
+  for itemname, itemtype, itemwidth in info:
+    decls.append(generate_decl(itemname, itemtype, itemwidth))
+  return decls
+                  
+
+# generate the laneswitch-memcores-wiring declarations to be placed inside the buffer
+def generate_lsmcw_decls(address_width, data_width, indices):
+  decls = []
+  for i in indices():
+    decl_name = f"locsig_i{i}laneswitches_memcores"
+    decls.extend(generate_lsmcw_wires(decl_name, address_width, data_width))
+  return decls
+
+
+def generate_memcores_memory_ports(address_width, data_width, indices):
+  ports = []
+  for i in indices():
+    # tag: SYNTAX_PORT_MEMCORES
+    io_port_name = f"memcores_i{i}"
+    ports.extend(
+        generate_ap_memory_interface(io_port_name, address_width, data_width, memports=2))
+  return ports
+
+# generate IOs for the laneswitch module
+def generate_laneswitches_ports(address_width, data_width, indices):
+  ports = []
+  # `indices` is a (lambda) function object that is a lazy iterable.
+  # It has to be expanded by `list()` before the length can be calculated.
+  # `count_dims` could have been used here, but the list is already being
+  # created slowly by `indices`, so...
+  listindices = list(indices())
+  _logger.debug("Generating %d laneswitches ports" % len(listindices))
+  
+  # generate tracking-fifo ports required for switching logic
+  info = []
+  for lane in range(2):
+    info.extend([(f"fifo_to_lane{str(lane)}_read", "input", None, "wire")])
+  ports.extend(generate_ports_from_info(info))
+
+  # generate memory lanes (coming from memcores and going into laneswitch modules)
+  for i in listindices:
+    io_port_name = f"laneswitches_i{i}mem_"
+    ports.extend(
+        generate_ap_memory_interface(io_port_name, address_width, data_width, memports=2))
+    
+  # generate i instances, each with 2 lanes, each lane with 2 mem ports 
+  for i in listindices:
+    for lane in range(2):
+      io_port_name = f"laneswitches_i{i}lane{str(lane)}_"
+      ports.extend(
+          generate_ap_memory_interface(io_port_name, address_width, data_width, memports=2))
+    
+  return ports
+
+
+###############################################################################
+###############################################################################
+### INSTANCE GENERATION
+###############################################################################
+
+# TODO: below two functions seem to be identical, no idea why @moazin wrote it with two
 # names. Figure that out
 
 
@@ -197,9 +328,14 @@ def generate_instance_with_custom_ports(module_name, instance_name,
   instance_list = ast.InstanceList(module_name, params_list, instances)
   return instance_list
 
+###############################################################################
+###############################################################################
+### MEMCORE GENERATION
+###############################################################################
+
 
 # generates some memcore instance with prefix given already, note that
-# param argumetns are passed in from the parent module with certain names
+# param arguments are passed in from the parent module with certain names
 # user of the function must be careful that they are valid
 def generate_memcore_instance(module_name, instance_name, io_prefix):
   params_list = [('DATA_WIDTH', 'DATA_WIDTH'), ('ADDRESS_WIDTH', 'ADDR_WIDTH'),
@@ -207,16 +343,16 @@ def generate_memcore_instance(module_name, instance_name, io_prefix):
   ports = [
       ('clk', 'clk'),
       ('reset', 'reset'),
-      ('address0', f'{io_prefix}producer_address'),
-      ('ce0', f'{io_prefix}producer_ce'),
-      ('we0', f'{io_prefix}producer_we'),
-      ('q0', f'{io_prefix}producer_q'),
-      ('d0', f'{io_prefix}producer_d'),
-      ('address1', f'{io_prefix}consumer_address'),
-      ('ce1', f'{io_prefix}consumer_ce'),
-      ('we1', f'{io_prefix}consumer_we'),
-      ('q1', f'{io_prefix}consumer_q'),
-      ('d1', f'{io_prefix}consumer_d'),
+      ('address0',  f'{io_prefix}address0'),
+      ('ce0',       f'{io_prefix}ce0'),
+      ('we0',       f'{io_prefix}we0'),
+      ('q0',        f'{io_prefix}q0'),
+      ('d0',        f'{io_prefix}d0'),
+      ('address1',  f'{io_prefix}address1'),
+      ('ce1',       f'{io_prefix}ce1'),
+      ('we1',       f'{io_prefix}we1'),
+      ('q1',        f'{io_prefix}q1'),
+      ('d1',        f'{io_prefix}d1'),
   ]
   return generate_instance(module_name, instance_name, params_list, ports)
 
@@ -227,14 +363,13 @@ def generate_memcore_instances(dims, ram_style):
   for integer in dims():
     module_name = 'memcore_uram' if ram_style == "URAM" else "memcore_bram"
     instance_name = f'core_{integer}'
-    io_prefix = f'mem_{integer}'
+    io_prefix = f'memcores_i{integer}'
     items.append(
         generate_memcore_instance(module_name, instance_name, io_prefix))
   return items
 
 
-# generate a memcores module given the parameter values, dims and
-# ram_style
+# generate a memcores module given the parameter values, dims and ram_style
 def generate_memcores_module(module_name, data_width, address_width,
                              address_range, dims, ram_style):
   parameters = [('DATA_WIDTH', data_width), ('ADDR_WIDTH', address_width),
@@ -245,31 +380,168 @@ def generate_memcores_module(module_name, data_width, address_width,
   reset = ast.Ioport(ast.Input('reset'), second=ast.Wire('reset'))
   port_list = [clk, reset]
   port_list.extend(
-      generate_buffer_memory_ports('ADDR_WIDTH', 'DATA_WIDTH',
+      generate_memcores_memory_ports('ADDR_WIDTH', 'DATA_WIDTH',
                                    lambda: index_generator(dims)))
   ports = ast.Portlist(port_list)
   items = generate_memcore_instances(lambda: index_generator(dims), ram_style)
   return ast.ModuleDef(module_name, params, ports, items)
 
 
-# generate a Verilog file from the module object
-def module_to_file(module, filename):
-  output = codegen.ASTCodeGenerator().visit(module)
-  with open(filename, "w") as fd:
-    fd.write("`default_nettype none\n")
-    fd.write(output)
-    fd.write("`default_nettype wire\n")
+###############################################################################
+###############################################################################
+### LANESWITCHES GENERATION
+###############################################################################
+
+# generate the laneswitch instance
+def generate_laneswitch_instance(module_name, instance_name, io_prefix, index):
+  _logger.debug("laneswitch instance")
+  params_list = [('DATA_WIDTH', 'DATA_WIDTH'), ('ADDR_WIDTH', 'ADDR_WIDTH'),
+                 ('ADDR_RANGE', 'ADDR_RANGE')]
+  ports = ([
+      ('clk', 'clk'),
+      ('reset', 'reset'),
+      # io_prefix has the form "_iN_", where N is index. [-2:][0] selects 'N' from the string
+      ('switch', f'switchbar[{str(index)}]'),])
+  for memport in range(2):
+    # tag: SYNTAX_PORT_LANESWITCHES
+    ports.extend([
+        (f'laneswitch_mem_address{str(memport)}',  f'laneswitches{io_prefix}mem_address{str(memport)}'),
+        (f'laneswitch_mem_ce{str(memport)}',       f'laneswitches{io_prefix}mem_ce{str(memport)}'),
+        (f'laneswitch_mem_we{str(memport)}',       f'laneswitches{io_prefix}mem_we{str(memport)}'),
+        (f'laneswitch_mem_q{str(memport)}',        f'laneswitches{io_prefix}mem_q{str(memport)}'),
+        (f'laneswitch_mem_d{str(memport)}',        f'laneswitches{io_prefix}mem_d{str(memport)}')])
+  for memport in range(2):
+    # tag: SYNTAX_PORT_LANESWITCHES
+    ports.extend([
+        (f'laneswitch_lane0_address{str(memport)}',  f'laneswitches{io_prefix}lane0_address{str(memport)}'),
+        (f'laneswitch_lane0_we{str(memport)}',       f'laneswitches{io_prefix}lane0_we{str(memport)}'),
+        (f'laneswitch_lane0_ce{str(memport)}',       f'laneswitches{io_prefix}lane0_ce{str(memport)}'),
+        (f'laneswitch_lane0_d{str(memport)}',        f'laneswitches{io_prefix}lane0_d{str(memport)}'),
+        (f'laneswitch_lane0_q{str(memport)}',        f'laneswitches{io_prefix}lane0_q{str(memport)}')])
+  for memport in range(2):
+    # tag: SYNTAX_PORT_LANESWITCHES
+    ports.extend([
+        (f'laneswitch_lane1_address{str(memport)}',  f'laneswitches{io_prefix}lane1_address{str(memport)}'),
+        (f'laneswitch_lane1_we{str(memport)}',       f'laneswitches{io_prefix}lane1_we{str(memport)}'),
+        (f'laneswitch_lane1_ce{str(memport)}',       f'laneswitches{io_prefix}lane1_ce{str(memport)}'),
+        (f'laneswitch_lane1_d{str(memport)}',        f'laneswitches{io_prefix}lane1_d{str(memport)}'),
+        (f'laneswitch_lane1_q{str(memport)}',        f'laneswitches{io_prefix}lane1_q{str(memport)}')])
+  return generate_instance(module_name, instance_name, params_list, ports)
 
 
-# generate string output from multiple modules
-def modules_to_str(modules):
-  generator = codegen.ASTCodeGenerator()
-  output = ''
-  for module in modules:
-    output += generator.visit(module)
-    output += '\n'
-  return output
+# generate a laneswitch instance given a dims array
+def generate_laneswitch_instances(dims):
+  _logger.debug("generating laneswitch instances")
+  items = []
+  count = 0
+  for index in dims():
+    module_name = "laneswitch"
+    instance_name = f"laneswitch_{index}"
+    io_prefix = f'_i{index}'
+    items.append(
+        generate_laneswitch_instance(module_name, instance_name, io_prefix, count))
+    count+=1
+  return items
 
+
+# generate a laneswitch module for this specific memcores module
+def generate_laneswitches_module(module_name, data_width, address_width,
+                             address_range, dims):
+  _logger.debug("generating laneswitches")
+  parameters = [('DATA_WIDTH', data_width), ('ADDR_WIDTH', address_width),
+                ('ADDR_RANGE', address_range)]
+  params = ast.Paramlist(
+      [generate_const_parameter(k, v) for k, v in parameters])
+  clk = ast.Ioport(ast.Input('clk'), second=ast.Wire('clk'))
+  reset = ast.Ioport(ast.Input('reset'), second=ast.Wire('reset'))
+  port_list = [clk, reset]
+  port_list.extend(
+      generate_laneswitches_ports('ADDR_WIDTH', 'DATA_WIDTH', lambda: index_generator(dims)))
+  ports = ast.Portlist(port_list)
+  items = generate_laneswitch_instances(lambda: index_generator(dims))
+
+  ### BEGIN DECLARATIONS ###
+  # switchbar register
+  dimswidth = str(count_dims(dims))
+  total_switches = str(count_dims(dims))
+  decl_reg_switchbar = generate_decl("switchbar", "reg", dimswidth)
+  items.append(decl_reg_switchbar)
+
+  # FSM related declarations
+  thisstate = ast.Identifier('this_state')
+  nextstate = ast.Identifier('next_state')
+  state_LANE0 = ast.Identifier('LANE0')
+  state_LANE1 = ast.Identifier('LANE1')
+  items.append(ast.Decl([ast.Reg('this_state',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b00")))]))
+  items.append(ast.Decl([ast.Reg('next_state',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b01")))]))
+  items.append(ast.Decl([ast.Localparam('LANE0',ast.Rvalue(ast.Value("2\'b00")))]))
+  items.append(ast.Decl([ast.Localparam('LANE1',ast.Rvalue(ast.Value("2\'b01")))]))
+  ### END DECLARATIONS ###
+
+  ### BEGIN FSM ###
+  # create the cases' if-else statements
+  if_fifolane1read_cond = ast.Identifier('fifo_to_lane1_read')
+  if_fifolane1read_true = ast.NonblockingSubstitution(
+                            ast.Lvalue(ast.Identifier('switchbar')),
+                            ast.Rvalue(ast.Value(f'{total_switches}\'b1')))
+  stateswitch_LANE1 = ast.NonblockingSubstitution(ast.Lvalue(nextstate),
+                                                  ast.Rvalue(state_LANE1))
+  if_fifolane1read = ast.IfStatement(cond=if_fifolane1read_cond,
+                                     true_statement=ast.Block([if_fifolane1read_true, stateswitch_LANE1]),
+                                     false_statement=None)
+  if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
+  if_fifolane0read_true = ast.NonblockingSubstitution(
+                            ast.Lvalue(ast.Identifier('switchbar')),
+                            ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+  stateswitch_LANE0 = ast.NonblockingSubstitution(ast.Lvalue(nextstate),
+                                                  ast.Rvalue(state_LANE0))
+  if_fifolane0read = ast.IfStatement(cond=if_fifolane0read_cond,
+                                     true_statement=ast.Block([if_fifolane0read_true, stateswitch_LANE0]),
+                                     false_statement=None)
+  # create the individual case statements
+  case_LANE0_statements = ast.Block([if_fifolane1read])
+  case_LANE1_statements = ast.Block([if_fifolane0read])
+  case_LANE0 = ast.Case([state_LANE0],case_LANE0_statements)
+  case_LANE1 = ast.Case([state_LANE1],case_LANE1_statements)
+  # create main FSM
+  caseblock_mainfsm = ast.CaseStatement(thisstate,([case_LANE0, case_LANE1]))
+  always_switchlogic_statement = ast.Block([caseblock_mainfsm])
+  always_switchlogic_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
+  always_switchlogic = ast.Always(
+                          sens_list=always_switchlogic_senslist,
+                          statement=always_switchlogic_statement)
+  items.append(always_switchlogic)
+
+  # create FSM driver (this_state <= next_state)
+  always_fsmdrive_statement = ast.NonblockingSubstitution(ast.Lvalue(thisstate),
+                                                          ast.Rvalue(nextstate))
+   ### BEGIN RESET ###
+  # create the reset condition (next_state <= LANE0)
+  if_reset_cond = ast.Identifier('reset')
+  if_reset_true = ast.NonblockingSubstitution(
+                           ast.Lvalue(ast.Identifier('next_state')),
+                           ast.Rvalue(state_LANE0))
+  bootstrap_switchbar = ast.NonblockingSubstitution(ast.Lvalue(ast.Identifier('switchbar')),
+                                                    ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+  resetlogic_statement = ast.Block([if_reset_true, bootstrap_switchbar])
+  ### END RESET ###
+
+  always_fsmdrive_block = ast.IfStatement(cond=if_reset_cond,
+                                    true_statement=resetlogic_statement,
+                                    false_statement=ast.Block([always_fsmdrive_statement]))
+  always_fsmdrive_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
+  always_fsmdrive = ast.Always(
+                          sens_list=always_fsmdrive_senslist,
+                          statement=ast.Block([always_fsmdrive_block]))
+  items.append(always_fsmdrive)
+  ### END FSM ###
+
+  return ast.ModuleDef(module_name, params, ports, items)
+
+###############################################################################
+###############################################################################
+### FIFO GENERATION
+###############################################################################
 
 # generates fifo io ports given a prefix and fifo data width
 def generate_fifo_port(prefix, fifo_data_width):
@@ -325,10 +597,14 @@ def generate_fifo_instance(module_name,
   ]
   return generate_instance(module_name, instance_name, params_list, ports)
 
+###############################################################################
+###############################################################################
+### BUFFER GENERATION
+###############################################################################
 
-# generates a memcores instance given module_name, instance_name, the dims
-# and level
-def generate_memcores_instance(module_name, instance_name, dims, level=None):
+
+# generates a memcores instance inside final buffer
+def generate_memcores_instance(module_name, instance_name, dims, level=None, hybrid=False):
   params_list = [('DATA_WIDTH', 'MEMORY_DATA_WIDTH'),
                  ('ADDR_WIDTH', 'MEMORY_ADDR_WIDTH'),
                  ('ADDR_RANGE', 'MEMORY_ADDR_RANGE'),
@@ -339,40 +615,81 @@ def generate_memcores_instance(module_name, instance_name, dims, level=None):
       ('clk', 'clk'),
       ('reset', 'reset'),
   ]
-  for prefix in index_generator(dims):
-    ports.extend([
-        (f'mem_{prefix}producer_address', f'mem_{prefix}producer_address'),
-        (f'mem_{prefix}producer_we', f'mem_{prefix}producer_we'),
-        (f'mem_{prefix}producer_ce', f'mem_{prefix}producer_ce'),
-        (f'mem_{prefix}producer_d', f'mem_{prefix}producer_d'),
-        (f'mem_{prefix}producer_q', f'mem_{prefix}producer_q'),
-        (f'mem_{prefix}consumer_address', f'mem_{prefix}consumer_address'),
-        (f'mem_{prefix}consumer_we', f'mem_{prefix}consumer_we'),
-        (f'mem_{prefix}consumer_ce', f'mem_{prefix}consumer_ce'),
-        (f'mem_{prefix}consumer_d', f'mem_{prefix}consumer_d'),
-        (f'mem_{prefix}consumer_q', f'mem_{prefix}consumer_q'),
-    ])
+  # connect memcores instance with laneswitch
+  if(hybrid): # hybrid buffer. Connect `memcores` to `laneswitches`.
+    for prefix in index_generator(dims):
+      for memport in range(2):
+        # tag: SYNTAX_PORT_MEMCORES, SYNTAX_DECL_LANESWITCHES
+        ports.extend([
+          (f'memcores_i{prefix}address{str(memport)}', f'locsig_i{prefix}laneswitches_memcores_address{str(memport)}'),
+          (f'memcores_i{prefix}we{str(memport)}',      f'locsig_i{prefix}laneswitches_memcores_we{str(memport)}'),
+          (f'memcores_i{prefix}ce{str(memport)}',      f'locsig_i{prefix}laneswitches_memcores_ce{str(memport)}'),
+          (f'memcores_i{prefix}d{str(memport)}',       f'locsig_i{prefix}laneswitches_memcores_d{str(memport)}'),
+          (f'memcores_i{prefix}q{str(memport)}',       f'locsig_i{prefix}laneswitches_memcores_q{str(memport)}'),
+      ])
+  else: # standard buffer. Connect `memcores` with prod/cons (1 port each)
+    for prefix in index_generator(dims):
+      # tag: SYNTAX_PORT_MEMCORES, SYNTAX_PORT_BUFFER
+      ports.extend([
+        (f'memcores_i{prefix}address0', f'buffer_core{prefix}producer_address0'),
+        (f'memcores_i{prefix}we0',      f'buffer_core{prefix}producer_we0'),
+        (f'memcores_i{prefix}ce0',      f'buffer_core{prefix}producer_ce0'),
+        (f'memcores_i{prefix}d0',       f'buffer_core{prefix}producer_d0'),
+        (f'memcores_i{prefix}q0',       f'buffer_core{prefix}producer_q0'),
+        (f'memcores_i{prefix}address1', f'buffer_core{prefix}consumer_address0'),
+        (f'memcores_i{prefix}we1',      f'buffer_core{prefix}consumer_we0'),
+        (f'memcores_i{prefix}ce1',      f'buffer_core{prefix}consumer_ce0'),
+        (f'memcores_i{prefix}d1',       f'buffer_core{prefix}consumer_d0'),
+        (f'memcores_i{prefix}q1',       f'buffer_core{prefix}consumer_q0'),
+      ])
   return generate_instance(module_name, instance_name, params_list, ports)
 
 
-# generate non-blocking assignment
-def generate_non_blocking_assignment(left, right):
-  return ast.NonblockingSubstitution(ast.Lvalue(ast.Identifier(left)),
-                                     ast.Rvalue(ast.Identifier(right)))
-
-
-# generate an always block given a sensitivity type, name of signal and
-# statements
-def generate_always_block(sens_type, sens_signal, statements):
-  return ast.Always(
-      ast.SensList((ast.Sens(ast.Identifier(sens_signal), sens_type),)),
-      ast.Block(statements))
+# generates a laneswitches instance inside final buffer
+def generate_laneswitches_instance(module_name, instance_name, dims, level=None):
+  params_list = [('DATA_WIDTH', 'MEMORY_DATA_WIDTH'),
+                 ('ADDR_WIDTH', 'MEMORY_ADDR_WIDTH'),
+                 ('ADDR_RANGE', 'MEMORY_ADDR_RANGE')]
+  if level is not None:
+    params_list.append(('LEVEL', level))
+  ports = [
+      ('clk', 'clk'),
+      ('reset', 'reset'),
+  ]
+  ports.extend([(f'fifo_to_lane0_read',f'fifo_free_buffers_read')])
+  ports.extend([(f'fifo_to_lane1_read',f'fifo_occupied_buffers_read')])
+  for prefix in index_generator(dims):
+    for memport in range(2):
+      # tag: SYNTAX_PORT_LANESWITCHES, SYNTAX_DECL_LANESWITCHES
+      ports.extend([
+          (f'laneswitches_i{prefix}mem_address{str(memport)}',  f'locsig_i{prefix}laneswitches_memcores_address{str(memport)}'),
+          (f'laneswitches_i{prefix}mem_we{str(memport)}',       f'locsig_i{prefix}laneswitches_memcores_we{str(memport)}'),
+          (f'laneswitches_i{prefix}mem_ce{str(memport)}',       f'locsig_i{prefix}laneswitches_memcores_ce{str(memport)}'),
+          (f'laneswitches_i{prefix}mem_d{str(memport)}',        f'locsig_i{prefix}laneswitches_memcores_d{str(memport)}'),
+          (f'laneswitches_i{prefix}mem_q{str(memport)}',        f'locsig_i{prefix}laneswitches_memcores_q{str(memport)}')])
+    for memport in range(2):
+      # tag: SYNTAX_PORT_BUFFER, SYNTAX_PORT_LANESWITCHES
+      ports.extend([
+          (f'laneswitches_i{prefix}lane0_address{str(memport)}', f'buffer_core{prefix}producer_address{str(memport)}'),
+          (f'laneswitches_i{prefix}lane0_we{str(memport)}',      f'buffer_core{prefix}producer_we{str(memport)}'),
+          (f'laneswitches_i{prefix}lane0_ce{str(memport)}',      f'buffer_core{prefix}producer_ce{str(memport)}'),
+          (f'laneswitches_i{prefix}lane0_d{str(memport)}',       f'buffer_core{prefix}producer_d{str(memport)}'),
+          (f'laneswitches_i{prefix}lane0_q{str(memport)}',       f'buffer_core{prefix}producer_q{str(memport)}')])
+    for memport in range(2):
+      # tag: SYNTAX_PORT_BUFFER, SYNTAX_PORT_LANESWITCHES
+      ports.extend([
+          (f'laneswitches_i{prefix}lane1_address{str(memport)}', f'buffer_core{prefix}consumer_address{str(memport)}'),
+          (f'laneswitches_i{prefix}lane1_we{str(memport)}',      f'buffer_core{prefix}consumer_we{str(memport)}'),
+          (f'laneswitches_i{prefix}lane1_ce{str(memport)}',      f'buffer_core{prefix}consumer_ce{str(memport)}'),
+          (f'laneswitches_i{prefix}lane1_d{str(memport)}',       f'buffer_core{prefix}consumer_d{str(memport)}'),
+          (f'laneswitches_i{prefix}lane1_q{str(memport)}',       f'buffer_core{prefix}consumer_q{str(memport)}')])
+  return generate_instance(module_name, instance_name, params_list, ports)
 
 
 # generate ping-pong buffer module given parameter values, dims
 def generate_double_buffer_module(module_name, data_width, address_width,
                                   address_range, no_partitions, dims,
-                                  memcores_name):
+                                  memcores_name, laneswitches_name=None):
   fifo_depth = no_partitions
   fifo_addr_width = max(1, ceil(log2(no_partitions)))
   parameters = [('MEMORY_DATA_WIDTH', data_width),
@@ -387,11 +704,35 @@ def generate_double_buffer_module(module_name, data_width, address_width,
   reset = generate_io_wire("reset", "input")
   ports_list = [clk, reset]
   ports_list.extend(generate_double_buffer_fifo_ports())
-  ports_list.extend(
-      generate_buffer_memory_ports('MEMORY_ADDR_WIDTH', 'MEMORY_DATA_WIDTH',
-                                   lambda: index_generator(dims)))
+
+  # specify hybrid buffer mode for buffer ports
+  # standard mode => 1 port  each for prod/cons
+  # hybrid mode   => 2 ports each for prod/cons
+  if(no_partitions == 1):
+    ports_list.extend(
+        generate_buffer_memory_ports('MEMORY_ADDR_WIDTH',
+                                     'MEMORY_DATA_WIDTH',
+                                     lambda: index_generator(dims),
+                                     hybrid=True))
+  else:
+    ports_list.extend(
+        generate_buffer_memory_ports('MEMORY_ADDR_WIDTH',
+                                     'MEMORY_DATA_WIDTH',
+                                     lambda: index_generator(dims),
+                                     hybrid=False))
   ports = ast.Portlist(ports_list)
   items = []
+  # add declarations 
+  if(no_partitions == 1): # add lsmcw (laneswitch-memcores-wires) in hybrid buffer mode
+    items.extend(generate_lsmcw_decls('MEMORY_ADDR_WIDTH',
+                                             'MEMORY_DATA_WIDTH',
+                                             lambda: index_generator(dims)))
+  # add instances
+  if(no_partitions == 1): # only add laneswitch in hybrid buffer mode
+    items.append(generate_laneswitches_instance(laneswitches_name, 'laneswitches', dims))
+    items.append(generate_memcores_instance(memcores_name, 'memcores', dims, None, True))
+  else:
+    items.append(generate_memcores_instance(memcores_name, 'memcores', dims, None, False))
   items.append(
       generate_fifo_instance('fifo', 'occupied_buffers',
                              'fifo_occupied_buffers', 'FIFO_DATA_WIDTH',
@@ -400,7 +741,7 @@ def generate_double_buffer_module(module_name, data_width, address_width,
       generate_fifo_instance('initialized_fifo', 'free_buffers',
                              'fifo_free_buffers', 'FIFO_DATA_WIDTH',
                              'FIFO_ADDR_WIDTH', 'FIFO_DEPTH'))
-  items.append(generate_memcores_instance(memcores_name, 'memcores', dims))
+  
   return ast.ModuleDef(module_name, params, ports, items)
 
 
@@ -462,8 +803,8 @@ def generate_relay_memcore_reg(module_name, data_width, addr_width, addr_range,
   statements = []
   for prefix in index_generator(dims):
     statements.append(
-        generate_non_blocking_assignment(f'mem_{prefix}producer_q',
-                                         f'mem_{prefix}consumer_q'))
+        generate_non_blocking_assignment(f'mem_{prefix}1producer_q',
+                                         f'mem_{prefix}2consumer_q'))
     statements.append(
         generate_non_blocking_assignment(f'mem_{prefix}consumer_address',
                                          f'mem_{prefix}producer_address'))
@@ -714,13 +1055,17 @@ def generate_relay_memcore_file(module_name, file_name, memcore_name,
 # Given:
 #   buffer_name, dims_pattern, data_width, addr_width, addr_range, default_latency,
 #   core_type, base_path, no_partitions
+#   no_partitions is the number of 'sections' in the buffer, not to be confused with
+#       the number of partitions in the memory. This terminology has been preserved
+#       only in this file. Otherwise, the conventional `sections` term is used.
 # we need to generate all the needed files, namely,
 #   - memcores_{buffer_name}: memcores_{buffer_name}.v <-- the internal memcores
 #   - buffer_{buffer_name}: buffer_{buffer_name}.v <-- the non-relayed buffer module
 #   - relay_memcores_{buffer_name}_reg: relay_memcores_{buffer_name}.v
 #   - relay_memcores_{buffer_name}: relay_memcores_{buffer_name}.v
 #   - relay_buffer_{buffer_name}: relay_buffer_{buffer_name}.v
-
+# `module_name` here refers to the unique ID that is generated for each buffer.
+# PASTA framework builds separate buffers and memcores modules based on this ID.
 
 def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
                           addr_range, default_latency, core_type, no_partitions,
@@ -729,6 +1074,7 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
   buffer_module_name = f'buffer_{buffer_name}'
   relay_memcores_name = f'relay_memcores_{buffer_name}'
   relay_buffer_name = f'relay_buffer_{buffer_name}'
+  laneswitches_name = f'laneswitches_{buffer_name}'
 
   module_to_file(
       generate_memcores_module(module_name=memcores_name,
@@ -738,6 +1084,14 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
                                dims=dims_pattern,
                                ram_style=core_type),
       os.path.join(base_path, f'{memcores_name}.v'))
+  if(no_partitions == 1): # only create a laneswitches module if hybrid buffer is required
+    module_to_file(
+        generate_laneswitches_module(module_name=laneswitches_name,
+                                data_width=data_width,
+                                address_width=addr_width,
+                                address_range=addr_range,
+                                dims=dims_pattern),
+        os.path.join(base_path, f'{laneswitches_name}.v'))
   module_to_file(
       generate_double_buffer_module(module_name=buffer_module_name,
                                     data_width=data_width,
@@ -745,7 +1099,8 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
                                     address_range=addr_range,
                                     no_partitions=no_partitions,
                                     dims=dims_pattern,
-                                    memcores_name=memcores_name),
+                                    memcores_name=memcores_name,
+                                    laneswitches_name=laneswitches_name),
       os.path.join(base_path, f'{buffer_module_name}.v'))
   generate_relay_memcore_file(module_name=relay_memcores_name,
                               file_name=os.path.join(
@@ -768,7 +1123,13 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
       os.path.join(base_path, f'{relay_buffer_name}.v'))
 
 
-def generate_buffer_from_config(buffer_unique_name, buffer_config, base_path):
+###############################################################################
+###############################################################################
+### ENTRY POINT
+###############################################################################
+
+def generate_buffer_from_config(buffer_unique_name, buffer_config, base_path, work_dir):
+  tapa.util.setup_logging(2, 0, work_dir)
   buffer_name = buffer_unique_name
 
   # prepare the dims_pattern to generate the names correctly
@@ -780,7 +1141,6 @@ def generate_buffer_from_config(buffer_unique_name, buffer_config, base_path):
       dims_patterns.append(dim)
     else:
       dims_patterns.append(partition.factor)
-
   data_width = buffer_config.width
 
   # find no of memcores
@@ -800,3 +1160,4 @@ def generate_buffer_from_config(buffer_unique_name, buffer_config, base_path):
   generate_buffer_files(buffer_name, dims_patterns, data_width, address_width,
                         size_memcore, 2, core_type, buffer_config.n_sections,
                         base_path)
+  # tapa.util.setup_logging(2, 1, work_dir)

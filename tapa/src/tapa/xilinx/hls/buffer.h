@@ -24,6 +24,7 @@ class section {
     return buf_ref.data[section_id];
   }
 
+// write the section_id to the buffer's sink on destruction
   ~section() {
 #pragma HLS inline
     if (last) {

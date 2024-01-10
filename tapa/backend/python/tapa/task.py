@@ -29,6 +29,7 @@ class Task:
     code: str, HLS C++ code of this task.
     tasks: A dict mapping child task names to json instance description objects.
     fifos: A dict mapping child fifo names to json FIFO description objects.
+    fifos: A dict mapping child buffer names to json buffer description objects.
     ports: A dict mapping port names to Port objects for the current task.
     module: rtl.Module, should be attached after RTL code is generated.
 
@@ -295,8 +296,8 @@ class Task:
       raise ValueError(f'{buffer_name} is not {direction} any task')
     task_name, task_idx = self.buffers[buffer_name][direction]
     for port, arg in self.tasks[task_name][task_idx]['args'].items():
-      if arg['cat'] == self._DIR2CAT_BUFFER[direction] and arg[
-          'arg'] == buffer_name:
+      if  arg['cat'] == self._DIR2CAT_BUFFER[direction] and \
+          arg['arg'] == buffer_name:
         return task_name, task_idx, port
     raise ValueError(f'task {self.name} has inconsistent metadata')
 

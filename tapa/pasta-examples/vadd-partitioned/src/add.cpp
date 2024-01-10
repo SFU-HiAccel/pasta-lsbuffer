@@ -3,21 +3,22 @@
 #include "add.h"
 
 void load(tapa::mmap<const float> vector,
-          tapa::obuffer<float[TILE], 2, tapa::array_partition<tapa::cyclic<2>>, tapa::memcore<tapa::bram>>& buffer,
+          tapa::obuffer<float[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer,
           int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
-#pragma HLS pipeline off
+    #pragma HLS pipeline off
     auto section = buffer.acquire();
     auto& buf_ref = section();
-    for (int j = 0; j < TILE; j++) {
-#pragma HLS pipeline II=1
+    for (int j = 0; j < TILE; j+=2) {
+      #pragma HLS pipeline II=1
       buf_ref[j] = vector[tile_id * TILE + j];
+      buf_ref[j+1] = vector[tile_id * TILE + j]+1;
     }
   }
 }
 
-void vadd(tapa::ibuffer<float[TILE], 2, tapa::array_partition<tapa::cyclic<2>>, tapa::memcore<tapa::bram>>& buffer_a,
-          tapa::ibuffer<float[TILE], 2, tapa::array_partition<tapa::cyclic<2>>, tapa::memcore<tapa::bram>>& buffer_b,
+void vadd(tapa::ibuffer<float[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_a,
+          tapa::ibuffer<float[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_b,
           tapa::obuffer<float[TILE], 2, tapa::array_partition<tapa::cyclic<2>>, tapa::memcore<tapa::bram>>& buffer_c,
           int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
@@ -57,8 +58,8 @@ void store(tapa::mmap<float> vector,
 void VecAdd(tapa::mmap<const float> vector_a,
             tapa::mmap<const float> vector_b,
             tapa::mmap<float> vector_c, uint64_t n_tiles) {
-  tapa::buffer<float[TILE], 2, tapa::array_partition<tapa::cyclic<2>>, tapa::memcore<tapa::bram>> buffer_a;
-  tapa::buffer<float[TILE], 2, tapa::array_partition<tapa::cyclic<2>>, tapa::memcore<tapa::bram>> buffer_b;
+  tapa::buffer<float[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>> buffer_a;
+  tapa::buffer<float[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>> buffer_b;
   tapa::buffer<float[TILE], 2, tapa::array_partition<tapa::cyclic<2>>, tapa::memcore<tapa::bram>> buffer_c;
   tapa::task()
     .invoke(load, vector_a, buffer_a, n_tiles)

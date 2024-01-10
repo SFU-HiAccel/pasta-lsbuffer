@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <cstdlib>
+#include <stdio.h>
 
 #include <gflags/gflags.h>
 #include <tapa.h>
@@ -23,8 +24,8 @@ int main(int argc, char *argv[]) {
 
   srand(0);
   for (int i = 0; i < N; i++) {
-    array_a[i] = rand() % 100;
-    array_b[i] = rand() % 100;
+    array_a[i] = i;
+    array_b[i] = i;
     array_c_cpu[i] = array_a[i] + array_b[i];
   }
 
@@ -35,12 +36,16 @@ int main(int argc, char *argv[]) {
     tapa::read_only_mmap<const float>(array_b),
     tapa::write_only_mmap<float>(array_c_fpga), n_tiles_per_pe);
 
+  bool fail = false;
   for (int i = 0; i < N; i++) {
     if (array_c_cpu[i] != array_c_fpga[i]) {
-      std::cout << "Mismatch found at i = " << i << std::endl;
-      return -1;
+      printf("Mismatch found at i = %d %f %f\n", i, array_c_cpu[i], array_c_fpga[i]);
+      // std::cout << "Mismatch found at i = %d %d %d" << i << array_c_cpu[i] << array_c_fpga[i] <<std::endl;
+      fail = true;
     }
   }
+  if(fail)
+    return -1;
   std::cout << "Successfully processed!" << std::endl;
   return 0;
 }

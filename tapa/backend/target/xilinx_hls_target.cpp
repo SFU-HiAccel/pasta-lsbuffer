@@ -246,17 +246,29 @@ void XilinxHLSTarget::AddCodeForLowerLevelBuffer(ADD_FOR_PARAMS_ARGS_DEF) {
     const auto data_var = GetDataVar(name);
 
     // generate ap_fifo port for src FIFO
-    add_pragma({"HLS interface ap_fifo port = ", src_var});
-    add_pragma({"HLS interface aggregate port = ", src_var});
+    add_pragma({"HLS interface ap_fifo port =", src_var});
+    add_pragma({"HLS interface aggregate port =", src_var});
 
     // generate ap_fifo port for sink FIFO
-    add_pragma({"HLS interface ap_fifo port = ", sink_var});
-    add_pragma({"HLS interface aggregate port = ", sink_var});
+    add_pragma({"HLS interface ap_fifo port =", sink_var});
+    add_pragma({"HLS interface aggregate port =", sink_var});
 
     // generate ap_memory port for the data
-    add_pragma({"HLS interface ap_memory latency=1 port = ",
-                data_var});
     add_pragma({"HLS aggregate variable = ", data_var});
+    // switch to hybrid buffer if only 1 section is used
+    if(bufferConfig.n_sections == 1)
+    {
+      add_pragma({"HLS interface mode=ap_memory latency=2 storage_type=ram_t2p port=", data_var});
+      add_pragma({"HLS bind_storage type=ram_t2p latency=2 variable=", data_var});
+      // Vivado 2021.2 assumes intra-loop dependencies when data is being written to the same port.
+      // This pragma needs to exist to make sure that Vivado generates 2 ports.
+      // However, the user will have to personally make sure that only 2 ports are being written.
+      add_pragma({"HLS dependence intra false variable=", data_var});
+    }
+    else
+    {
+      add_pragma({"HLS interface ap_memory latency=1 port=", data_var});
+    }
 
     auto partition_scheme = bufferConfig.partition_config;
     for (int i = 0; i < partition_scheme.size(); i++) {
