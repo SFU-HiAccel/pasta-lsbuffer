@@ -483,7 +483,7 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   if_fifolane1read_cond = ast.Identifier('fifo_to_lane1_read')
   if_fifolane1read_true = ast.NonblockingSubstitution(
                             ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b1')))
+                            ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'1'*int(total_switches))))
   stateswitch_LANE1 = ast.NonblockingSubstitution(ast.Lvalue(nextstate),
                                                   ast.Rvalue(state_LANE1))
   if_fifolane1read = ast.IfStatement(cond=if_fifolane1read_cond,
@@ -492,7 +492,7 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
   if_fifolane0read_true = ast.NonblockingSubstitution(
                             ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+                            ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'0'*int(total_switches))))
   stateswitch_LANE0 = ast.NonblockingSubstitution(ast.Lvalue(nextstate),
                                                   ast.Rvalue(state_LANE0))
   if_fifolane0read = ast.IfStatement(cond=if_fifolane0read_cond,
@@ -522,7 +522,7 @@ def generate_laneswitches_module(module_name, data_width, address_width,
                            ast.Lvalue(ast.Identifier('next_state')),
                            ast.Rvalue(state_LANE0))
   bootstrap_switchbar = ast.NonblockingSubstitution(ast.Lvalue(ast.Identifier('switchbar')),
-                                                    ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
+                                                    ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'0'*int(total_switches))))
   resetlogic_statement = ast.Block([if_reset_true, bootstrap_switchbar])
   ### END RESET ###
 
@@ -1129,7 +1129,7 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
 ###############################################################################
 
 def generate_buffer_from_config(buffer_unique_name, buffer_config, base_path, work_dir):
-  tapa.util.setup_logging(2, 0, work_dir)
+  tapa.util.setup_logging(1, 0, work_dir)
   buffer_name = buffer_unique_name
 
   # prepare the dims_pattern to generate the names correctly
