@@ -3,9 +3,9 @@
 #include "add.h"
 
 
-void vadd(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_a,
-          tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_b,
-          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_c,
+void vadd(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_a,
+          tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_b,
+          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_c,
           int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
 #pragma HLS pipeline off
@@ -33,7 +33,7 @@ COMPUTE_LOOP:
 
 
 void load(tapa::mmap<const data_type_mmap> argmmap,
-          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_load,
+          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_load,
           int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
     #pragma HLS pipeline off
@@ -52,7 +52,7 @@ void load(tapa::mmap<const data_type_mmap> argmmap,
 
 void loadStream(tapa::istream<data_type>& a0,
           tapa::istream<data_type>& a1,
-          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_load,
+          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_load,
           int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
     #pragma HLS pipeline off
@@ -87,7 +87,7 @@ void Mmap2Stream(tapa::mmap<const data_type_mmap> argmmap,
 }
 
 // void loadB(tapa::mmap<const data_type_mmap> vector,
-//           tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer,
+//           tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
 //           int n_tiles) {
 //   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
 //     #pragma HLS pipeline off
@@ -106,7 +106,7 @@ void Mmap2Stream(tapa::mmap<const data_type_mmap> argmmap,
 /// STORE
 //////////////////
 void store(tapa::mmap<data_type_mmap> argmmap,
-           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_store,
+           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_store,
            int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
 #pragma HLS pipeline off
@@ -142,7 +142,7 @@ void Stream2Mmap(tapa::istream<data_type>& stream0,
 
 void storeStream(tapa::ostream<data_type>& c0,
            tapa::ostream<data_type>& c1,
-           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>>& buffer_c,
+           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_c,
            int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
 #pragma HLS pipeline off
@@ -164,9 +164,9 @@ void storeStream(tapa::ostream<data_type>& c0,
 void VecAdd(tapa::mmap<const data_type_mmap> vector_a,
             tapa::mmap<const data_type_mmap> vector_b,
             tapa::mmap<data_type_mmap> vector_c, uint64_t n_tiles) {
-  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>> buffer_a;
-  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>> buffer_b;
-  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::cyclic<1>>, tapa::memcore<tapa::bram>> buffer_c;
+  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_a;
+  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_b;
+  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_c;
   tapa::stream<data_type> a_q0("a0");
   tapa::stream<data_type> a_q1("a1");
   tapa::stream<data_type> b_q0("b0");
