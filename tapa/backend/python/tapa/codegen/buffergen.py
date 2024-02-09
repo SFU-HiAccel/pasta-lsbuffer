@@ -468,15 +468,15 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   items.append(decl_reg_switchbar)
 
   # FSM related declarations
-  thisstate = ast.Identifier('this_state')
-  nextstate = ast.Identifier('next_state')
+  thisstate = ast.Identifier('this_lane')
+  nextstate = ast.Identifier('next_lane')
   state_LANE0 = ast.Identifier('LANE0')
   state_LANE1 = ast.Identifier('LANE1')
   if_reset_cond = ast.Identifier('reset')
-  items.append(ast.Decl([ast.Reg('this_state',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b00")))]))
-  items.append(ast.Decl([ast.Reg('next_state',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b01")))]))
-  items.append(ast.Decl([ast.Localparam('LANE0',ast.Rvalue(ast.Value("2\'b00")))]))
-  items.append(ast.Decl([ast.Localparam('LANE1',ast.Rvalue(ast.Value("2\'b01")))]))
+  items.append(ast.Decl([ast.Reg('this_lane',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b00")))]))
+  items.append(ast.Decl([ast.Reg('next_lane',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b01")))]))
+  items.append(ast.Decl([ast.Localparam('LANE0',ast.Rvalue(ast.Value("2\'b01")))]))
+  items.append(ast.Decl([ast.Localparam('LANE1',ast.Rvalue(ast.Value("2\'b10")))]))
   ### END DECLARATIONS ###
 
   ### BEGIN FSM ###
@@ -522,8 +522,9 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   always_switchlogic_block = ast.Block([always_switchlogic_if_statement])
   
   # make the sensitivity list for the FSM. Next-State should change only on any of the requested reads.
-  always_switchlogic_senslist = ast.SensList([ast.Sens(ast.Identifier('fifo_to_lane0_read'), type='posedge'),
-                                              ast.Sens(ast.Identifier('fifo_to_lane1_read'), type='posedge')])
+  always_switchlogic_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
+  # always_switchlogic_senslist = ast.SensList([ast.Sens(ast.Identifier('fifo_to_lane0_read'), type='posedge'),
+                                              # ast.Sens(ast.Identifier('fifo_to_lane1_read'), type='posedge')])
   always_switchlogic = ast.Always(
                           sens_list=always_switchlogic_senslist,
                           statement=always_switchlogic_block)
@@ -533,12 +534,15 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   always_fsmdrive_statement = ast.NonblockingSubstitution(ast.Lvalue(thisstate),
                                                           ast.Rvalue(nextstate))
   ### BEGIN RESET ###
-  # create the reset condition (next_state <= LANE0)
+  # create the reset condition:
+  # (next_state <= LANE1) binds memory to LANE1.
+  #         The first transfer is going to be a producer, which will create a switch to LANE0
+  # (switchbar <= N'bN1) is the equivalent switchbar state for being in LANE1.
   if_reset_true = ast.NonblockingSubstitution(
-                           ast.Lvalue(ast.Identifier('next_state')),
-                           ast.Rvalue(state_LANE0))
+                           ast.Lvalue(nextstate),
+                           ast.Rvalue(state_LANE1))
   bootstrap_switchbar = ast.NonblockingSubstitution(ast.Lvalue(ast.Identifier('switchbar')),
-                                                    ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'0'*int(total_switches))))
+                                                    ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'1'*int(total_switches))))
   resetlogic_statement = ast.Block([if_reset_true, bootstrap_switchbar])
   ### END RESET ###
 
