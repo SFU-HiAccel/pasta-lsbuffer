@@ -3,7 +3,7 @@ KERNEL=add
 KERNEL_TOP=VecAdd
 KERNEL_ARGS=
 ifndef PLATFORM
-PLATFORM=xilinx_u280_xdma_201920_3
+PLATFORM=xilinx_u280_gen3x16_xdma_1_202211_1
 endif
 
 XRT_INI_PATH=scripts/xrt.ini
@@ -23,7 +23,7 @@ c: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
 
 ${KERNEL}: c
 
-xo: ${KERNEL}
+xo: ./${KERNEL}
 ifndef PLATFORM
 $(error No PLATFORM is set!)
 endif
@@ -58,7 +58,6 @@ runxodbg: ${KERNEL}.${PLATFORM}.hw.xo
 runxov: ${KERNEL}.${PLATFORM}.hw.xo
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Building .xclbin through Vitis"
-	export XRT_INI_PATH=scripts/xrt.ini
 	v++ -o ${KERNEL}.${PLATFORM}.hw_emu.xclbin \
 	--link \
 	--target hw_emu\
@@ -128,6 +127,7 @@ cleandbg:
 	rm -rf xosim
 	rm -rf vitis_run_hw_emu
 	rm -rf *.protoinst
+	rm -rf xsim.dir
 # only delete wave configurations that were automatically generated	
 	rm -rf *${PLATFORM}*.wcfg
 	rm -f ${KERNEL}.${PLATFORM}.hw.xo
