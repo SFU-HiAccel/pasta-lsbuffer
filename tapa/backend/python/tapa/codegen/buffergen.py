@@ -1056,7 +1056,7 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
 ###############################################################################
 
 def generate_buffer_from_config(buffer_unique_name, buffer_config, base_path, work_dir):
-  tapa.util.setup_logging(1, 0, work_dir)
+  #tapa.util.setup_logging(1, 0, work_dir)
   buffer_name = buffer_unique_name
 
   # prepare the dims_pattern to generate the names correctly
