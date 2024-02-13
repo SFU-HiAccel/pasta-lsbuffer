@@ -401,7 +401,9 @@ def generate_laneswitch_instance(module_name, instance_name, io_prefix, index):
       ('clk', 'clk'),
       ('reset', 'reset'),
       # io_prefix has the form "_iN_", where N is index. [-2:][0] selects 'N' from the string
-      ('switch', f'switchbar[{str(index)}]'),])
+      # ('switch', f'switchbar[{str(index)}]'),])
+      ('req0', f'fifo_to_lane0_read'),
+      ('req1', f'fifo_to_lane1_read'),])
   for memport in range(2):
     # tag: SYNTAX_PORT_LANESWITCHES
     ports.extend([
@@ -460,103 +462,8 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   ports = ast.Portlist(port_list)
   items = generate_laneswitch_instances(lambda: index_generator(dims))
 
-  ### BEGIN DECLARATIONS ###
-  # switchbar register
-  dimswidth = str(count_dims(dims))
-  total_switches = str(count_dims(dims))
-  decl_reg_switchbar = generate_decl("switchbar", "reg", dimswidth)
-  items.append(decl_reg_switchbar)
-
-  # FSM related declarations
-  thisstate = ast.Identifier('this_lane')
-  nextstate = ast.Identifier('next_lane')
-  state_LANE0 = ast.Identifier('LANE0')
-  state_LANE1 = ast.Identifier('LANE1')
-  if_reset_cond = ast.Identifier('reset')
-  items.append(ast.Decl([ast.Reg('this_lane',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b00")))]))
-  items.append(ast.Decl([ast.Reg('next_lane',ast.Value('[1:0]'),value=ast.Rvalue(ast.Value("2\'b01")))]))
-  items.append(ast.Decl([ast.Localparam('LANE0',ast.Rvalue(ast.Value("2\'b01")))]))
-  items.append(ast.Decl([ast.Localparam('LANE1',ast.Rvalue(ast.Value("2\'b10")))]))
-  ### END DECLARATIONS ###
-
-  ### BEGIN FSM ###
-  # create the cases' if-else statements
-  if_fifolane1read_cond = ast.Identifier('fifo_to_lane1_read')
-  if_fifolane1read_true = ast.NonblockingSubstitution(
-                            ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'1'*int(total_switches))))
-  stateswitch_LANE1 = ast.NonblockingSubstitution(ast.Lvalue(nextstate),
-                                                  ast.Rvalue(state_LANE1))
-  if_fifolane1read = ast.IfStatement(cond=if_fifolane1read_cond,
-                                     true_statement=ast.Block([if_fifolane1read_true, stateswitch_LANE1]),
-                                     false_statement=None)
-  if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
-  if_fifolane0read_true = ast.NonblockingSubstitution(
-                            ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'0'*int(total_switches))))
-  stateswitch_LANE0 = ast.NonblockingSubstitution(ast.Lvalue(nextstate),
-                                                  ast.Rvalue(state_LANE0))
-  if_fifolane0read = ast.IfStatement(cond=if_fifolane0read_cond,
-                                     true_statement=ast.Block([if_fifolane0read_true, stateswitch_LANE0]),
-                                     false_statement=None)
-  default_switchbar_assignment = ast.NonblockingSubstitution(
-                            ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'X'*int(total_switches))))
-  # create the individual case statements
-  case_LANE0_statements = ast.Block([if_fifolane1read])
-  case_LANE1_statements = ast.Block([if_fifolane0read])
-  case_LANE0 = ast.Case([state_LANE0],case_LANE0_statements)
-  case_LANE1 = ast.Case([state_LANE1],case_LANE1_statements)
-  case_LANE1_statements = ast.Block([if_fifolane0read])
-  case_default_statements = ast.Block([default_switchbar_assignment])
-  case_default = ast.Case([ast.Identifier('default')], case_default_statements)
-  # create main FSM
-  caseblock_mainfsm = ast.CaseStatement(thisstate,([case_LANE0, case_LANE1, case_default]))
-  always_switchlogic_caseblock = ast.Block([caseblock_mainfsm])
-  always_switchlogic_if_reset_statement = ast.NonblockingSubstitution(
-                                            ast.Lvalue(thisstate),
-                                            ast.Rvalue(state_LANE0))
-  always_switchlogic_if_statement = ast.IfStatement(cond=if_reset_cond,
-                                    true_statement=ast.Block([always_switchlogic_if_reset_statement]),
-                                    false_statement=always_switchlogic_caseblock)
-  always_switchlogic_block = ast.Block([always_switchlogic_if_statement])
-  
-  # make the sensitivity list for the FSM. Next-State should change only on any of the requested reads.
-  always_switchlogic_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
-  # always_switchlogic_senslist = ast.SensList([ast.Sens(ast.Identifier('fifo_to_lane0_read'), type='posedge'),
-                                              # ast.Sens(ast.Identifier('fifo_to_lane1_read'), type='posedge')])
-  always_switchlogic = ast.Always(
-                          sens_list=always_switchlogic_senslist,
-                          statement=always_switchlogic_block)
-  items.append(always_switchlogic)
-
-  # create FSM driver (this_state <= next_state)
-  always_fsmdrive_statement = ast.NonblockingSubstitution(ast.Lvalue(thisstate),
-                                                          ast.Rvalue(nextstate))
-  ### BEGIN RESET ###
-  # create the reset condition:
-  # (next_state <= LANE1) binds memory to LANE1.
-  #         The first transfer is going to be a producer, which will create a switch to LANE0
-  # (switchbar <= N'bN1) is the equivalent switchbar state for being in LANE1.
-  if_reset_true = ast.NonblockingSubstitution(
-                           ast.Lvalue(nextstate),
-                           ast.Rvalue(state_LANE1))
-  bootstrap_switchbar = ast.NonblockingSubstitution(ast.Lvalue(ast.Identifier('switchbar')),
-                                                    ast.Rvalue(ast.Value(f'{total_switches}\'b'+f'1'*int(total_switches))))
-  resetlogic_statement = ast.Block([if_reset_true, bootstrap_switchbar])
-  ### END RESET ###
-
-  always_fsmdrive_block = ast.IfStatement(cond=if_reset_cond,
-                                    true_statement=resetlogic_statement,
-                                    false_statement=ast.Block([always_fsmdrive_statement]))
-  always_fsmdrive_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
-  always_fsmdrive = ast.Always(
-                          sens_list=always_fsmdrive_senslist,
-                          statement=ast.Block([always_fsmdrive_block]))
-  items.append(always_fsmdrive)
-  ### END FSM ###
-
   return ast.ModuleDef(module_name, params, ports, items)
+
 
 ###############################################################################
 ###############################################################################
