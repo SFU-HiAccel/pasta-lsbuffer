@@ -130,16 +130,13 @@ void storeStream(tapa::ostream<data_type>& c0,
            tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_c,
            int n_tiles) {
   for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
-// #pragma HLS pipeline off
+#pragma HLS pipeline off
     auto section = buffer_c.acquire();
     auto& buf_rf = section();
     for (int j = 0; j < TILE; j+=2) {
 #pragma HLS pipeline II=1
-      float x[2];
-      x[0] = buf_rf[j];
-      x[1] = buf_rf[j+1];
-      c0.write(x[0]);
-      c1.write(x[1]);
+      c0.write(buf_rf[j]);
+      c1.write(buf_rf[j+1]);
     }
   }
 }
