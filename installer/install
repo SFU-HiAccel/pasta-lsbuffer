@@ -79,14 +79,14 @@ fi
 # Install in environment
 #----------
 echo "Linking install..."
-sudo mkdir -p $INSTALL_PREFIX/bin
-sudo mkdir -p $INSTALL_PREFIX/include
-sudo mkdir -p $INSTALL_PREFIX/lib
-sudo ln -sfn "${PWD}"/backend/tapacc $INSTALL_PREFIX/bin/
-sudo ln -sfn "${PWD}"/../src/tapa $INSTALL_PREFIX/include/
-sudo ln -sfn "${PWD}"/../src/tapa.h $INSTALL_PREFIX/include/
-sudo ln -sfn "${PWD}"/libtapa.a $INSTALL_PREFIX/lib/
-sudo ln -sfn "${PWD}"/libtapa.so $INSTALL_PREFIX/lib/
+mkdir -p $CONDA_PREFIX/bin
+mkdir -p $CONDA_PREFIX/include
+mkdir -p $CONDA_PREFIX/lib
+ln -sfn "${PWD}"/backend/tapacc $CONDA_PREFIX/bin/
+ln -sfn "${PWD}"/../src/tapa $CONDA_PREFIX/include/
+ln -sfn "${PWD}"/../src/tapa.h $CONDA_PREFIX/include/
+ln -sfn "${PWD}"/libtapa.a $CONDA_PREFIX/lib/
+ln -sfn "${PWD}"/libtapa.so $CONDA_PREFIX/lib/
 
 cd $PROJECT_DIR
 touch setup
