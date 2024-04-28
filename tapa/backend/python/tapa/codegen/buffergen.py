@@ -730,8 +730,8 @@ def generate_relay_memcore_reg(module_name, data_width, addr_width, addr_range,
   statements = []
   for prefix in index_generator(dims):
     statements.append(
-        generate_non_blocking_assignment(f'mem_{prefix}1producer_q',
-                                         f'mem_{prefix}2consumer_q'))
+        generate_non_blocking_assignment(f'mem_{prefix}producer_q',
+                                         f'mem_{prefix}consumer_q'))
     statements.append(
         generate_non_blocking_assignment(f'mem_{prefix}consumer_address',
                                          f'mem_{prefix}producer_address'))
