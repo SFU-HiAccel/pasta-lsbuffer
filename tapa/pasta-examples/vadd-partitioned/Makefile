@@ -11,8 +11,8 @@ all: c xo runxo
 
 c: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
 	@echo "[MAKE]: Compiling for C target"
-	g++ -o ${KERNEL} -O2 src/${KERNEL}.cpp src/${KERNEL}-host.cpp -ltapa -lfrt -lglog -lgflags -lOpenCL -DTAPA_BUFFER_SUPPORT -std=c++17
-#./${KERNEL} ${KERNEL_ARGS}
+	g++ -o ${KERNEL} -O2 src/${KERNEL}.cpp src/${KERNEL}-host.cpp -I${XILINX_HLS}/include -ltapa -lfrt -lglog -lgflags -lOpenCL -DTAPA_BUFFER_SUPPORT -std=c++17
+	./${KERNEL} ${KERNEL_ARGS}
 
 xo: ${KERNEL}
 ifndef platform

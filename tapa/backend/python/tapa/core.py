@@ -371,6 +371,7 @@ class Program:
             task, buffer_name, "consumed_by")
         producer_reads = False
         consumer_writes = False
+        _logger.debug("Buffer '%s' with %i section(s)"%(buffer_name, buffer_config.n_sections))
         if (buffer_config.n_sections == 1): # forces a complex buffer
           _logger.warning('  buffer channel %s has 1 section. Hybrid buffer will be used', buffer_name)
           make_simple = False
@@ -606,13 +607,13 @@ class Program:
           task.module.add_signals([wire])
 
         for index in index_generator(buffer_config.get_dim_patterns()):
-          for suffix, width, wire_dir, port_suffix, _ in buffer_config.get_memory_suffixes(
-              direction):
+          for suffix, width, wire_dir, port_suffix, _ in buffer_config.get_memory_suffixes(direction):
             wire_name = rtl.wire_name(buffer_name, suffix.format(index))
             wire_width = ast.Width(
                 ast.Minus(ast.IntConst(width), ast.IntConst('1')),
                 ast.IntConst('0'))
             wire = ast.Wire(name=wire_name, width=wire_width)
+            # print(task_name, wire_name, wire_width)
             task.module.add_signals([wire])
 
       if task.is_buffer_external(buffer_name):
@@ -1183,18 +1184,19 @@ class Program:
         if needs_recompilation:
           tasks_to_recompile[task_invocation] = produced_buffers
 
-    for (task_name,
-         invocation_index), produced_bufs in tasks_to_recompile.items():
+    for (task_name, invocation_index), produced_bufs in tasks_to_recompile.items():
       dest_task_name = f'{task_name}_{invocation_index}'
       source_path = self.get_cpp(task_name)
       dest_path = self.get_cpp(dest_task_name)
       shutil.copy(source_path, dest_path)
+      # print(source_path, dest_path)
       # replace the task name in the function itself
       file_contents = None
       with open(dest_path, "r") as fh:
         file_contents = fh.read()
       re_string = f'void(\s*?){task_name}\('
       re_sub_string = f'void\\1{task_name}_{invocation_index}('
+      # print(re_string, re_sub_string)
       file_contents = re.sub(re_string,
                              re_sub_string,
                              file_contents,
@@ -1202,6 +1204,7 @@ class Program:
       for buf_name, obj in produced_bufs.items():
         re_string = f'void(\s*?){dest_task_name}(.*?)\{{(.*?)ap_memory latency = 1 port =([^#]*?){buf_name}\.data(.*?)\}}'
         re_sub_string = f'void\\1{dest_task_name}\\2{{\\3ap_memory latency = {1 + 2*(obj["pipeline_level"] - 1)} port =\\4{buf_name}.data\\5}}'
+        # print(re_string, re_sub_string)
         file_contents = re.sub(re_string,
                                re_sub_string,
                                file_contents,

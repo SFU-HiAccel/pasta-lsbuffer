@@ -80,14 +80,17 @@ def index_generator(factors):
         indices[i] += 1
         break
 
+# shorthand for returning ast.Width given a string width
+def astwidth(width: str):
+  return ast.Width(ast.Minus(ast.Identifier(width), ast.IntConst('1')),
+                    ast.IntConst('0'))
 
 # generates an input/output module wire of a certain width
 # and direction
 def generate_io_wire(name, direction, width=None):
   kwargs = {"name": name}
   if width is not None:
-    kwargs["width"] = ast.Width(
-        ast.Minus(ast.Identifier(width), ast.IntConst('1')), ast.IntConst('0'))
+    kwargs["width"] = astwidth(width)
   if direction == "input":
     cls = ast.Input
   else:
@@ -100,8 +103,7 @@ def generate_io_wire(name, direction, width=None):
 def generate_io_reg(name, direction, width=None):
   kwargs = {"name": name}
   if width is not None:
-    kwargs["width"] = ast.Width(
-        ast.Minus(ast.Identifier(width), ast.IntConst('1')), ast.IntConst('0'))
+    kwargs["width"] = astwidth(width)
   if direction == "input":
     cls = ast.Input
   else:
@@ -116,8 +118,7 @@ def generate_decl(name, decl_type, width=None, length=None):
   else:
     cls = ast.Wire
   if width is not None:
-    width = ast.Width(ast.Minus(ast.Identifier(width), ast.IntConst('1')),
-                      ast.IntConst('0'))
+    width = astwidth(width)
   if length is not None:
     #length = ast.Dimensions((ast.Length(ast.Minus(ast.Identifier(length), ast.IntConst('1')), ast.IntConst('0')),))
     length = ast.Dimensions((ast.Length(ast.Identifier(length),
@@ -400,7 +401,9 @@ def generate_laneswitch_instance(module_name, instance_name, io_prefix, index):
       ('clk', 'clk'),
       ('reset', 'reset'),
       # io_prefix has the form "_iN_", where N is index. [-2:][0] selects 'N' from the string
-      ('switch', f'switchbar[{str(index)}]'),])
+      # ('switch', f'switchbar[{str(index)}]'),])
+      ('req0', f'fifo_to_lane0_read'),
+      ('req1', f'fifo_to_lane1_read'),])
   for memport in range(2):
     # tag: SYNTAX_PORT_LANESWITCHES
     ports.extend([
@@ -459,52 +462,7 @@ def generate_laneswitches_module(module_name, data_width, address_width,
   ports = ast.Portlist(port_list)
   items = generate_laneswitch_instances(lambda: index_generator(dims))
 
-  # create the switchbar register
-  dimswidth = str(count_dims(dims))
-  items.append(generate_decl("switchbar", "reg", dimswidth))
-  
-  # create the reset condition (switchbar <= 0)
-  total_switches = str(count_dims(dims))
-  if_reset_cond = ast.Identifier('reset')
-  if_reset_true = ast.NonblockingSubstitution(
-                            ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
-  if_reset = ast.IfStatement(cond=if_reset_cond,
-                                     true_statement=ast.Block([if_reset_true]),
-                                     false_statement=None)
-  # put the statements in `always@(negedge reset)` block
-  always_resetlogic_statement = ast.Block([if_reset])
-  always_resetlogic_senslist = ast.Sens(ast.Identifier('reset'), type='negedge')
-  always_resetlogic = ast.Always(
-                          sens_list=always_resetlogic_senslist,
-                          statement=always_resetlogic_statement)
-  items.append(always_resetlogic)
-
-  # create the switchlogic's if-else statements
-  total_switches = str(count_dims(dims))
-  if_fifolane0read_cond = ast.Identifier('fifo_to_lane0_read')
-  if_fifolane0read_true = ast.NonblockingSubstitution(
-                            ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b0')))
-  if_fifolane0read = ast.IfStatement(cond=if_fifolane0read_cond,
-                                     true_statement=ast.Block([if_fifolane0read_true]),
-                                     false_statement=None)
-  if_fifolane1read_cond = ast.Identifier('fifo_to_lane1_read')
-  if_fifolane1read_true = ast.NonblockingSubstitution(
-                            ast.Lvalue(ast.Identifier('switchbar')),
-                            ast.Rvalue(ast.Value(f'{total_switches}\'b1')))
-  if_fifolane1read = ast.IfStatement(cond=if_fifolane1read_cond,
-                                     true_statement=ast.Block([if_fifolane1read_true]),
-                                     false_statement=None)
-  # put if-else statements in `always@(posedge clk)` block
-  always_switchlogic_statement = ast.Block([if_fifolane0read, if_fifolane1read])
-  always_switchlogic_senslist = ast.Sens(ast.Identifier('clk'), type='posedge')
-  always_switchlogic = ast.Always(
-                          sens_list=always_switchlogic_senslist,
-                          statement=always_switchlogic_statement)
-  items.append(always_switchlogic)
   return ast.ModuleDef(module_name, params, ports, items)
-
 
 
 ###############################################################################
@@ -1098,7 +1056,7 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
 ###############################################################################
 
 def generate_buffer_from_config(buffer_unique_name, buffer_config, base_path, work_dir):
-  tapa.util.setup_logging(2, 0, work_dir)
+  #tapa.util.setup_logging(1, 0, work_dir)
   buffer_name = buffer_unique_name
 
   # prepare the dims_pattern to generate the names correctly
