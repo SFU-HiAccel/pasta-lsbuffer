@@ -2,24 +2,19 @@
 #define __SB_H__
 #include <stdint.h>
 #include <iostream>
-
-#define BYTES_PER_RAMBLOCK (4)
-
-using iport_t = uint8_t;
-using oport_t = uint8_t;
-using section_t = uint16_t;
-using addrtype_t = uint16_t;
+#include "sbif_config.h"
+#include "sbif.h"
 
 /**
- * datatype_t --> type of the data packet to be interchanged.
+ * datatype_t --> type of the data packet (page) that will be ID-ed.
  *                All headers and bookkeeping is appended within sharedBuffer.
  * iports     --> Number of input ports (producers)
  * oports     --> Number of output ports (consumers)
- * nblocks    --> Total number of buffer-blocks to maintain
+ * npages     --> Total number of buffer-blocks (pages) to maintain
  * concurrency--> Number of concurrent operations to allow.
  *                concurrency <= (iports+oports)
 */
-template <typename datatype_t, iport_t iports, oport_t oports, section_t nblocks, section_t concurrency>
+template <typename sb_msg_t,  iport_t iports, oport_t oports, section_t npages, section_t concurrency>
 class SharedBuffer {
 private:
   // size of container (number of RAM blocks) required to store 1 `datatype_t`
@@ -31,21 +26,15 @@ private:
   void* txdstreams_p;
 public:
   // first abstract the buffercore type
-  using buffercore_t = tapa::buffer<datatype_t[nblocks], concurrency, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
-  using rxdstreams_t = tapa::streams<datatype_t, iports>;
-  using txdstreams_t = tapa::streams<datatype_t, oports>;
+  using buffercore_t = tapa::buffer<sb_msg_t[npages], concurrency, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
+  using rxdstreams_t = tapa::streams<sb_msg_t, iports>;
+  using txdstreams_t = tapa::streams<sb_msg_t, oports>;
   using rxastreams_t = tapa::streams<addrtype_t, iports>;
   using txastreams_t = tapa::streams<addrtype_t, oports>;
 
   // constructor
   SharedBuffer() {
-    std::cout << "init a shared buff"<< std::endl;
-    std::cout << "i/p ports   : " << iports << std::endl;
-    std::cout << "o/p ports   : " << oports << std::endl;
-    std::cout << "concurrency : " << concurrency << std::endl;
-    std::cout << "typesize    : " << sizeof(datatype_t) << std::endl;
-    std::cout << "totalsize   : " << sizeof(buffercore_t) << std::endl;
-    container_size = sizeof(datatype_t)/BYTES_PER_RAMBLOCK;
+    container_size = sizeof(sb_msg_t)/BYTES_PER_RAMBLOCK;
 
     // create temporary pointers to the buffercore and stream-arrays
     buffercore_t* buffercore_p_ = new buffercore_t;
@@ -75,12 +64,30 @@ public:
    * */ 
   bool validate_config()
   {
-    static_assert(concurrency < (iports + oports),\
+    // print some info first
+    std::cout << "shared buff   " << std::endl;
+    std::cout << "i/p ports   : " << (unsigned)iports << std::endl;
+    std::cout << "o/p ports   : " << (unsigned)oports << std::endl;
+    std::cout << "concurrency : " << concurrency << std::endl;
+    std::cout << "typesize    : " << sizeof(sb_msg_t) << std::endl;
+    std::cout << "totalsize   : " << sizeof(buffercore_t) << std::endl;
+
+    static_assert(concurrency <= (iports + oports),\
     "Cannot provide concurrency more than total i/o-ports");
   }
 
   size_t get_container_size() const {
     return container_size;
+  }
+
+  bool connect(void* _sbif_p, sbif_depth_t _tx_depth, sbif_depth_t _rx_depth)
+  {
+    using SBIF_t = SBIF<sbif_msg_t, _tx_depth, _rx_depth>;
+    SBIF_t* sbif_p = static_cast<SBIF_t*>(_sbif_p);
+    auto temp = sbif_p->sbif_data_p->data;
+    using newType =  decltype(temp);
+    SBIF<newType, sbif_p->get_tx_depth(), sbif_p->get_rx_depth()> sbifSB1;
+    // tx_msgs = _sbif->get_rx_depth();
   }
 };
 
