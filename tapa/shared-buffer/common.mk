@@ -32,7 +32,12 @@ ifndef PLACEMENT_STRATEGY
 PLACEMENT_STRATEGY="EarlyBlockPlacement"
 endif
 
-RUNXOVDBG_OUTPUT_DIR="$$(pwd)/vitis_run_hw_emu"
+KERNEL_CO=${BUILD_DIR_PREFIX}/${KERNEL}
+KERNEL_XO="${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw.xo"
+KERNEL_XCLBIN_EM="${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw_emu.xclbin"
+KERNEL_XCLBIN_HW="${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw.xclbin"
+
+RUNXOVDBG_OUTPUT_DIR="${BUILD_DIR_PREFIX}/vitis_run_hw_emu"
 
 .PHONY: all c xo runxo runxodbg runxov runxovdbg hw runhw cleanall clean cleanxo cleanhdl
 
@@ -41,35 +46,34 @@ all: c xo hw
 ################
 ### SW_EMU
 ################
-c: ${KERNEL}
-	-./${KERNEL} ${KERNEL_ARGS}
+c: ${KERNEL_CO}
+	-${KERNEL_CO} ${KERNEL_ARGS}
 
-${KERNEL}: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
+${KERNEL_CO}: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
 	@echo "[MAKE]: Compiling for C target"
-	g++ -o ${KERNEL} -O2 src/${KERNEL}.cpp src/${KERNEL}-host.cpp -I${XILINX_HLS}/include -ltapa -lfrt -lglog -lgflags -lOpenCL -DTAPA_BUFFER_SUPPORT -std=c++17
+	g++ -o ${KERNEL_CO} -O2 src/${KERNEL}.cpp src/${KERNEL}-host.cpp -I${XILINX_HLS}/include -ltapa -lfrt -lglog -lgflags -lOpenCL -DTAPA_BUFFER_SUPPORT -std=c++17
 
 
 ################
 ### HW_EMU
 ################
-xo: ${KERNEL}.${PLATFORM}.hw.xo
-
-${KERNEL}.${PLATFORM}.hw.xo: ${KERNEL}
+xo: 
+${KERNEL_XO}: ${KERNEL_CO}
 ifndef PLATFORM
 $(error No PLATFORM is set!)
 endif
 	@echo "[MAKE]: Compiling for XO target"
-	tapac -o ${KERNEL}.${PLATFORM}.hw.xo src/${KERNEL}.cpp --platform ${PLATFORM} --top ${KERNEL_TOP} --work-dir ${KERNEL}.${PLATFORM}.hw.xo.tapa --enable-buffer-support --connectivity connectivity.ini --max-parallel-synth-jobs 24 --separate-complex-buffer-tasks
+	tapac -o ${KERNEL_XO} src/${KERNEL}.cpp --platform ${PLATFORM} --top ${KERNEL_TOP} --work-dir ${KERNEL_XO}.tapa --enable-buffer-support --connectivity connectivity.ini --max-parallel-synth-jobs 24 --separate-complex-buffer-tasks
 
 runxo: xo
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Running HW_EMU (.xo)"
-	./${KERNEL} ${KERNEL_ARGS} --bitstream=${KERNEL}.${PLATFORM}.hw.xo
+	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XO}
 
 runxodbg: xo
 	@echo "[MAKE]: Target waveform"
 	@echo "[MAKE]: Running waveform for HW_EMU (.xo)"
-	-./${KERNEL} ${KERNEL_ARGS} --bitstream=${KERNEL}.${PLATFORM}.hw.xo -xosim_work_dir xosim -xosim_save_waveform
+	-${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XO} -xosim_work_dir xosim -xosim_save_waveform
 	@head -n -2 xosim/output/run/run_cosim.tcl > xosim/output/run/run_cosim_no_exit.tcl
 	@echo "open_wave_config {wave.wcfg}" >> xosim/output/run/run_cosim_no_exit.tcl
 	vivado -mode gui -source xosim/output/run/run_cosim_no_exit.tcl
@@ -77,14 +81,15 @@ runxodbg: xo
 runxov: xo
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Building .xclbin through Vitis"
-	v++ -o ${KERNEL}.${PLATFORM}.hw_emu.xclbin \
+	v++ -o ${KERNEL_XCLBIN_EM} \
 	--link \
 	--target hw_emu\
   --kernel ${KERNEL_TOP} \
 	--platform ${PLATFORM} \
-	${KERNEL}.${PLATFORM}.hw.xo
+	${KERNEL_XO}.${PLATFORM}.hw.xo
 	@echo "[MAKE]: Running HW_EMU (.xclbin)"
-	./${KERNEL} ${KERNEL_ARGS} --bitstream=${KERNEL}.${PLATFORM}.hw_emu.xclbin
+	@cd ${BUILD_DIR_PREFIX}
+	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XCLBIN_EM}
 
 runxovdbg: xo
 	@echo "[MAKE]: Target HW_EMU"
@@ -92,7 +97,7 @@ runxovdbg: xo
 	export XRT_INI_PATH=scripts/xrt.ini
 	v++ -g \
 	--link \
-	--output "${RUNXOVDBG_OUTPUT_DIR}/${KERNEL_TOP}.${PLATFORM}.xclbin" \
+	--output "${RUNXOVDBG_OUTPUT_DIR}/${KERNEL_XCLBIN_EM}" \
 	--kernel ${KERNEL_TOP} \
 	--platform ${PLATFORM} \
 	--target hw_emu \
@@ -101,7 +106,7 @@ runxovdbg: xo
 	--optimize 3 \
 	--connectivity.nk ${KERNEL_TOP}:1:${KERNEL_TOP} \
 	--save-temps \
-	"${KERNEL}.${PLATFORM}.hw.xo" \
+	"${KERNEL_XO}" \
 	--vivado.synth.jobs ${MAX_SYNTH_JOBS} \
 	--vivado.prop=run.impl_1.STEPS.PHYS_OPT_DESIGN.IS_ENABLED=1 \
 	--vivado.prop=run.impl_1.STEPS.OPT_DESIGN.ARGS.DIRECTIVE=Explore \
@@ -110,7 +115,7 @@ runxovdbg: xo
 	--vivado.prop=run.impl_1.STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE=Explore \
 	--config "connectivity.ini"
 	@echo "[MAKE]: Running HW_EMU (.xclbin)"
-	-./${KERNEL} ${KERNEL_ARGS} --bitstream=${RUNXOVDBG_OUTPUT_DIR}/${KERNEL_TOP}.${PLATFORM}.xclbin
+	-${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${RUNXOVDBG_OUTPUT_DIR}/${KERNEL_XCLBIN_EM}
 	xsim -gui *.wdb
 
 
@@ -118,9 +123,9 @@ runxovdbg: xo
 ################
 ### HARDWARE
 ################
-hw: ${KERNEL}.${PLATFORM}.hw.xclbin
+hw: ${KERNEL_XCLBIN_HW}
 
-${KERNEL}.${PLATFORM}.hw.xclbin: ${KERNEL}.${PLATFORM}.hw.xo
+${KERNEL_XCLBIN_HW}: ${KERNEL_XO}
 ifndef PLATFORM
 $(error No PLATFORM is set!)
 endif
@@ -130,7 +135,7 @@ endif
 runhw: hw
 	@echo "[MAKE]: Target HW"
 	@echo "[MAKE]: Running HW (.xclbin)"
-	./${KERNEL} ${KERNEL_ARGS} --bitstream=vitis_run_hw/${KERNEL_TOP}.${PLATFORM}.hw.xclbin
+	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=vitis_run_hw/${KERNEL_XCLBIN_HW}
 
 ### CLEAN
 cleanall: clean cleanxo cleandbg cleanhw
@@ -140,34 +145,33 @@ cleanhw:
 	rm -rf vitis_run_hw
 
 clean:
-	rm -f ${KERNEL}
+	rm -f ${KERNEL_CO}
 
 cleanxo:
-	rm -f ${KERNEL}.${PLATFORM}.hw_emu*
-	rm -f ${KERNEL}.${PLATFORM}.hw.xo
+	rm -f ${KERNEL_XCLBIN_EM}
+	rm -f ${KERNEL_XO}
 	rm -f ${KERNEL}.${PLATFORM}.hw_generate_bitstream.sh
-	rm -f *.log
-	rm -rf ${KERNEL}.${PLATFORM}.hw.xo.tapa
-	rm -rf _x
+	rm -rf ${KERNEL_XO}.tapa
 
 cleandbg:
 # delete all logs
-	rm -f *.jou
-	rm -f *.log
-	rm -f *.run_summary
+	rm -f ${BUILD_DIR_PREFIX}/*.jou
+	rm -f ${BUILD_DIR_PREFIX}/*.log
+	rm -f ${BUILD_DIR_PREFIX}/*.run_summary
 # delete bloat
-	rm -rf vivado
-	rm -rf xosim
-	rm -rf vitis_run_hw_emu
-	rm -rf *.protoinst
-	rm -rf xsim.dir
+	rm -rf ${BUILD_DIR_PREFIX}/vivado
+	rm -rf ${BUILD_DIR_PREFIX}/xosim
+	rm -rf ${BUILD_DIR_PREFIX}/vitis_run_hw_emu
+	rm -rf ${BUILD_DIR_PREFIX}/*.protoinst
+	rm -rf ${BUILD_DIR_PREFIX}/xsim.dir
 # only delete wave configurations that were automatically generated	
-	rm -rf *${PLATFORM}*.wcfg
-	rm -f ${KERNEL}.${PLATFORM}.hw.xo
-	rm -rf ${KERNEL}.${PLATFORM}.hw.xo.tapa
+	rm -rf ${BUILD_DIR_PREFIX}/*${PLATFORM}*.wcfg
+	rm -f  ${KERNELXO}
+	rm -rf ${KERNEL_XO}.tapa
 # delete some intermediary files generated from the custom scripts
-	rm -f opencl_trace.csv profile_kernels.csv summary.csv timeline_kernels.csv runs.md
+	cd ${BUILD_DIR_PREFIX}
+	rm -f  opencl_trace.csv profile_kernels.csv summary.csv timeline_kernels.csv runs.md
 
 cleanrtl:
-	@echo "[MAKE]: Cleaning ${KERNEL}.${PLATFORM}.hw.xo.tapa/hdl/"
-	rm -rf ${KERNEL}.${PLATFORM}.hw.xo.tapa/hdl/
+	@echo "[MAKE]: Cleaning ${KERNEL_XO}.tapa/hdl/"
+	rm -rf ${KERNEL_XO}.tapa/hdl/

@@ -3,6 +3,8 @@ SHELL:=/bin/bash
 #KERNEL_TOP=VecAdd
 #KERNEL_ARGS=
 PLATFORM=xilinx_u280_gen3x16_xdma_1_202211_1
+#BUILD_DIR_PREFIX=${SIM_WS}/builds/sb/shared-buffer/
+BUILD_DIR_PREFIX=builds
 
 #XRT_INI_PATH=scripts/xrt.ini
 MAX_SYNTH_JOBS=24
