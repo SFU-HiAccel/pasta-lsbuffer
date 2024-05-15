@@ -3,10 +3,6 @@
 #define PACK_LENGTH 2
 #define NDBLKS (TILE/PACK_LENGTH)
 
-#define SB_NPROD  (2)
-#define SB_NCONS  (2)
-
-
 #include <ap_int.h>
 
 template <typename T>

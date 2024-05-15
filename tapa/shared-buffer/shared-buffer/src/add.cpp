@@ -1,7 +1,6 @@
 #include <tapa.h>
 #include "add.h"
-#include "sbif.h"
-#include "sb.h"
+#include "brahma.h"
 
 void vadd(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_a,
           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_b,
@@ -70,6 +69,22 @@ void store(tapa::mmap<bits<data_type_mmap>> argmmap,
   }
 }
 
+void task1(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
+           tapa::ostream<sb_msg_t>& tx_task1_to_sb,
+           tapa::istream<sb_msg_t>& rx_sb_to_task1,
+           tapa::ostream<sb_pageid_t>& tx_task1_to_task2)
+{
+  sb_pageid_t allocated_page1 = request_page(tx_task1_to_sb, 1);
+  
+}
+
+void task2(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
+           tapa::ostream<sb_msg_t>& tx_task2_to_sb,
+           tapa::istream<sb_msg_t>& rx_sb_to_task2,
+           tapa::istream<sb_pageid_t>& rx_task1_to_task2)
+{
+  
+}
 
 ////////////////
 /// WRAPPER
@@ -80,23 +95,20 @@ void VecAdd(tapa::mmap<bits<data_type_mmap>> vector_a,
             tapa::mmap<bits<data_type_mmap>> vector_c,
             uint64_t n_tiles) {
 
-  SharedBuffer<sbif_msg_t, SB_MSGS_PER_PAGE, SB_NPROD, SB_NCONS, TILE, (SB_NPROD+SB_NCONS)> sb_dt;
+  sb_t sbo;
   // SharedBuffer<sbif_msg_t, SB_MSGS_PER_PAGE, SB_NPROD, SB_NCONS, TILE, (SB_NPROD+SB_NCONS)> sb_dt;
-  std::cout << sb_dt.get_container_size() << std::endl;
+  // std::cout << sbo.get_iport(1) << std::endl;
   std::cout << "===" << std::endl;
-
-  SBIF<sbif_msg_t, sbif_depths[0], sbif_depths[1]> sbif_task1;
-  SBIF<sbif_msg_t, sbif_depths[1], sbif_depths[0]> sbif_task2;
-  sb_dt.connect((void*)&sbif_task1, sbif_depths[0], sbif_depths[1]);
-  sb_dt.connect((void*)&sbif_task2, sbif_depths[0], sbif_depths[1]);
-  // SBIF<uint64_t, sbif_depths[2], sbif_depths[0]> sbif_task3;
-
+  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_a;
+  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_b;
+  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_c;
+  
+  
   tapa::task()
     .invoke(load, vector_a, buffer_a, n_tiles)
     .invoke(load, vector_b, buffer_b, n_tiles)
-    .invoke(sb_dt.init)
-    .invoke(add1, buffer_a, sbif_task1)
-    .invoke(add2, buffer_b, sbif_task2)
-    .invoke(readFromBuffer, buffer_c, sbif_task3)
+    .invoke(task1, buffer_a, sbo, sbo.get_iport(0), sbo.get_oport(0))
+    .invoke(task2, buffer_b, sbo, sbo.get_iport(1), sbo.get_oport(1))
+    // .invoke(readFromBuffer, buffer_c, sbif_task3)
     .invoke(store, vector_c, buffer_c, n_tiles);
 }
