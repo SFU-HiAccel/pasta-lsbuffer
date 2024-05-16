@@ -19,6 +19,56 @@ using sb_pageid_t     = uint16_t;
 using sb_stream_t     = ap_uint<SB_WORD_SIZE_BITS>;
 using sb_msg_t        = uint64_t;
 
+#define SB_REQ_WRITE_MSGS (0x1)
+#define SB_REQ_READ_MSGS  (0x2)
+#define SB_REQ_GRAB_PAGE  (0x4)
+#define SB_REQ_FREE_PAGE  (0x8)
+
+#define SB_RSP_WAIT   (0x1)
+#define SB_RSP_DONE   (0x2)
+#define SB_RSP_FAIL   (0x4)
+
+/**
+ * Standard Request Type:
+ * 
+ *  <-----------------------sb_msg_t---------------------->
+ * |           |  1   |      8     |      8      |    8    |
+ *  <-padding-> <c_dn> <-req_code-> <-num_pages-> <-pg_idx->
+ * 
+*/
+typedef struct {
+  union{
+    struct{
+      sb_pageid_t pageid;
+      sb_pageid_t npages;
+      uint8_t     code;
+    }fields;
+    sb_msg_t req_msg;
+  };
+  bool c_dn;
+}sb_req_t;
+
+/**
+ * Standard Response Type:
+ * 
+ *  <-----------------------sb_msg_t---------------------->
+ * |           |  1   |      8     |      8      |    8    |
+ *  <-padding-> <c_dn> <-req_code-> <-num_pages-> <-pg_idx->
+ * 
+*/
+typedef struct {
+  union{
+    struct{
+      sb_pageid_t pageid;
+      sb_pageid_t npages;
+      uint8_t     code;
+    }fields;
+    sb_msg_t rsp_msg;
+  };
+  bool c_dn;
+}sb_rsp_t;
+
+
 /**
  * SBIF 
  * Consider an example where 2 tasks connect to the shared buffer.
