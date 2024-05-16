@@ -3,9 +3,62 @@
 
 #include <stdint.h>
 #include <iostream>
-#include "tapa.h"
 #include "sbif_config.h"
 #include "brahma.h"
+
+// all sizes in bytes
+#define SBIF_WORD_SIZE  (sizeof(sbif_word_t))
+#define SBIF_LINE_SIZE  (sizeof(sbif_line_t))
+#define SBIF_MSG_SIZE   (SBIF_LINE_SIZE)
+
+// get the minimum burst length.
+// line_size will always be a multiple of word_size.
+// Otherwise, the interface logic becomes complex for no reason
+#define SBIF_MIN_BURST  (SBIF_LINE_SIZE/SBIF_WORD_SIZE)
+
+/**
+* SBIF Control Port:
+*   contains the control information.
+*   TX:
+*     write_readn - determines whether the request is a read or a write.
+*     page_id     - this is the pointer ID that would have been shared.
+*     line_offset - which line to view in the page.
+*     num_lines   - how many lines (messages) to read
+*   RX:
+*     ack         - acknowledgement from peer TX that a message is read.
+*     sb_response - response from the SB about malloc/free requests
+*
+* @todo:
+*   * Let the user instantiate the entire struct, but warn about unused
+*     RX/TX ports if the task is only producing/consuming.
+*/
+typedef struct
+{
+  union {
+    bool          write_readn;
+    uint8_t       num_lines;
+  }task_request;
+  sbif_pageid_t page_id;
+  sbif_index_t  line_offset;
+}ctx_t;
+typedef struct
+{
+  bool          ack;
+  sbif_word_t   sb_response;
+}crx_t;
+typedef struct
+{
+  void* ctx_p;
+  void* crx_p;
+}sbif_ctrl_t;
+
+typedef struct
+{
+  void* dtx_p;
+  void* drx_p;
+  sbif_msg_t data;
+}sbif_data_t;
+
 
 /**
  * Each Heap interface provides two 'ports':
@@ -18,13 +71,13 @@
  *  2. A PE that only does one type of I/O operation defines only one port
  *      and hence saves resources.
 */
-template <typename sb_msg_t, uint8_t _tx_depth, uint8_t _rx_depth>
-class SBIF (){
+template <typename _sbif_msg_t, sbif_depth_t _tx_depth, sbif_depth_t _rx_depth>
+class SBIF {
 private:
-  uint8_t tx_depth = _tx_depth;
-  uint8_t rx_depth = _rx_depth;
-  sb_msg_t tx_msgs[tx_depth];
-  sb_msg_t rx_msgs[rx_depth];
+  constexpr static sbif_depth_t tx_depth = _tx_depth;
+  constexpr static sbif_depth_t rx_depth = _rx_depth;
+  _sbif_msg_t tx_msgs[tx_depth];
+  _sbif_msg_t rx_msgs[rx_depth];
   sbif_data_t* sbif_data_p;
   sbif_ctrl_t* sbif_ctrl_p;
 
@@ -34,7 +87,7 @@ public:
   using crxstream_t = tapa::stream<crx_t>;
 
   // constructor
-  SBIF(tapa::ostream<sb_msg_t>* rxq_p, tapa::istream<sb_msg_t>* txq_p) {
+  SBIF() {
     // create the data streams - 1 each for TX/RX
     dstream_t* _dtx_p = new dstream_t;
     dstream_t* _drx_p = new dstream_t;

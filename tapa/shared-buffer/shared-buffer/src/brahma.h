@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <iostream>
 #include "sbif_config.h"
+#include "sbif.h"
 
 /**
  * datatype_t --> type of the data packet (page) that will be ID-ed.
@@ -21,41 +22,57 @@ private:
   // declare buffer pointer as a void type,
   // dimension information is stored in the public variable `buffercore_t`
   void* buffercore_p;
-  void* brxstreams_p;
-  void* btxstreams_p;
+  void* brxqs_p;
+  void* btxqs_p;
+
+  typedef struct
+  {
+    union{
+      uint8_t valid : 1;
+      uint8_t pad   : 7;
+    }header;
+    sb_pageid_t pageid;
+  }sb_metadata_t;
+
+  sb_metadata_t metadata_t[SB_NUM_PAGES] = {0};
+  bool valid_pages[8][(SB_NUM_PAGES>>3)] = {0};
+
+  // used to set pageids in metadata when that page is requested for the first time
+  sb_pageid_t pageid_init_counter = 0;
+  
 public:
   // first abstract the buffercore type
   using buffercore_t  = tapa::buffer<sb_msg_t[npages], concurrency, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
-  using brxstreams_t  = tapa::streams<sb_msg_t, iports>;
-  using btxstreams_t  = tapa::streams<sb_msg_t, oports>;
-  using brxstream_t   = tapa::stream<sb_msg_t>;
-  using btxstream_t   = tapa::stream<sb_msg_t>;
-  // using drxstreams_t = tapa::streams<sb_msg_t, iports>;
-  // using dtxstreams_t = tapa::streams<sb_msg_t, oports>;
-  // using crxstreams_t = tapa::streams<addrtype_t, iports>;
-  // using ctxstreams_t = tapa::streams<addrtype_t, oports>;
+  using brxqs_t  = tapa::streams<sb_msg_t, iports>;
+  using btxqs_t  = tapa::streams<sb_msg_t, oports>;
+  using brxq_t   = tapa::stream<sb_msg_t>;
+  using btxq_t   = tapa::stream<sb_msg_t>;
+  // using drxqs_t = tapa::streams<sb_msg_t, iports>;
+  // using dtxqs_t = tapa::streams<sb_msg_t, oports>;
+  // using crxqs_t = tapa::streams<addrtype_t, iports>;
+  // using ctxqs_t = tapa::streams<addrtype_t, oports>;
 
   // constructor
   SharedBuffer() {
     // create temporary pointers to the buffercore and stream-arrays
     buffercore_t* buffercore_p_ = new buffercore_t;
-    brxstreams_t* brxstreams_p_ = new brxstreams_t;// rxds("rxdstreams");
-    btxstreams_t* btxstreams_p_ = new btxstreams_t;// txds("txdstreams");
+    brxqs_t* brxqs_p_ = new brxqs_t;// rxds("rxdstreams");
+    btxqs_t* btxqs_p_ = new btxqs_t;// txds("txdstreams");
     // cast this pointer type to the corresponding private pointers
     buffercore_p = static_cast<void*>(buffercore_p_);
-    brxstreams_p = static_cast<void*>(brxstreams_p_);
-    btxstreams_p = static_cast<void*>(btxstreams_p_);
+    brxqs_p = static_cast<void*>(brxqs_p_);
+    btxqs_p = static_cast<void*>(btxqs_p_);
 
-    // tapa::streams<datatype_t, iports> rx("rxstream");
-    // tapa::streams<datatype_t, oports> tx("txstream");
+    // tapa::streams<datatype_t, iports> rx("rxq");
+    // tapa::streams<datatype_t, oports> tx("txq");
     validate_config();
   }
 
   ~SharedBuffer() {
     // delete buffercore pointer upon destruction
     delete static_cast<buffercore_t*>(buffercore_p);
-    delete static_cast<brxstreams_t*>(brxstreams_p);
-    delete static_cast<btxstreams_t*>(btxstreams_p);
+    delete static_cast<brxqs_t*>(brxqs_p);
+    delete static_cast<btxqs_t*>(btxqs_p);
   }
 
   /**
@@ -77,14 +94,22 @@ public:
     "Cannot provide concurrency more than total i/o-ports");
   }
 
-  brxstream_t get_iport(sb_portid_t _rx_idx)
+  brxq_t get_iport(sb_portid_t _rx_idx)
   {
-    return (static_cast<brxstreams_t*>(brxstreams_p))[_rx_idx];
+    return (static_cast<brxqs_t*>(brxqs_p))[_rx_idx];
   }
 
-  btxstream_t get_oport(sb_portid_t _tx_idx)
+  btxq_t get_oport(sb_portid_t _tx_idx)
   {
-    return (static_cast<btxstreams_t*>(btxstreams_p))[_tx_idx];
+    return (static_cast<btxqs_t*>(btxqs_p))[_tx_idx];
+  }
+
+  sb_pageid_t request_page(brxq_t* req, sb_pageid_t pages_to_allocate)
+  {
+    return 0;
+    // check if there are enough free pages available.
+
+    // if yes, allocate
   }
 
 };

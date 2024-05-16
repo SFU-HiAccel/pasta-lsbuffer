@@ -2,6 +2,8 @@
 #include "add.h"
 #include "brahma.h"
 
+using sb_t = SharedBuffer<sb_msg_t, SB_NUM_PAGES, SB_NRX, SB_NTX, (SB_NRX+SB_NTX)>;
+
 void vadd(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_a,
           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_b,
           tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_c,
@@ -69,19 +71,21 @@ void store(tapa::mmap<bits<data_type_mmap>> argmmap,
   }
 }
 
-void task1(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
-           tapa::ostream<sb_msg_t>& tx_task1_to_sb,
-           tapa::istream<sb_msg_t>& rx_sb_to_task1,
-           tapa::ostream<sb_pageid_t>& tx_task1_to_task2)
+void task1( tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
+            sb_t sbo,
+            tapa::ostream<sb_msg_t>& tx_task1_to_sb,
+            tapa::istream<sb_msg_t>& rx_sb_to_task1,
+            tapa::ostream<sb_pageid_t>& tx_task1_to_task2)
 {
-  sb_pageid_t allocated_page1 = request_page(tx_task1_to_sb, 1);
+  sb_pageid_t allocated_page1 = sbo.request_page(tx_task1_to_sb, 1);
   
 }
 
-void task2(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
-           tapa::ostream<sb_msg_t>& tx_task2_to_sb,
-           tapa::istream<sb_msg_t>& rx_sb_to_task2,
-           tapa::istream<sb_pageid_t>& rx_task1_to_task2)
+void task2( tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
+            sb_t sbo,
+            tapa::ostream<sb_msg_t>& tx_task2_to_sb,
+            tapa::istream<sb_msg_t>& rx_sb_to_task2,
+            tapa::istream<sb_pageid_t>& rx_task1_to_task2)
 {
   
 }
@@ -96,7 +100,6 @@ void VecAdd(tapa::mmap<bits<data_type_mmap>> vector_a,
             uint64_t n_tiles) {
 
   sb_t sbo;
-  // SharedBuffer<sbif_msg_t, SB_MSGS_PER_PAGE, SB_NPROD, SB_NCONS, TILE, (SB_NPROD+SB_NCONS)> sb_dt;
   // std::cout << sbo.get_iport(1) << std::endl;
   std::cout << "===" << std::endl;
   tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_a;

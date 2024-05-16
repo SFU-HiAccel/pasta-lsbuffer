@@ -1,7 +1,8 @@
 #ifndef __SB_H__
 #define __SB_H__
 #include <stdint.h>
-#include <iostream>
+#include <stddef.h>
+//#include <iostream.h>
 #include "sbif_config.h"
 #include "sbif.h"
 
