@@ -72,12 +72,13 @@ void store(tapa::mmap<bits<data_type_mmap>> argmmap,
 }
 
 void task1( tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
-            sb_t sbo,
             tapa::ostream<sb_msg_t>& tx_task1_to_sb,
             tapa::istream<sb_msg_t>& rx_sb_to_task1,
             tapa::ostream<sb_pageid_t>& tx_task1_to_task2)
 {
-  sb_pageid_t allocated_page1 = sbo.request_page(tx_task1_to_sb, 1);
+  SBIF<sb_msg_t, 2, 2> sbif1(rx_sb_to_task1, tx_task1_to_sb);
+  sb_msg_t rsp;
+  rsp = sbif1.grab_page(1);
   
 }
 
