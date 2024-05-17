@@ -6,3 +6,5 @@
 work.out
 work.xo
 run/
+*.swp
+builds
