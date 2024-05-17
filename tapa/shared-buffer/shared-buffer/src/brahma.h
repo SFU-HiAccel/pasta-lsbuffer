@@ -56,8 +56,9 @@ public:
   SharedBuffer() {
     // create temporary pointers to the buffercore and stream-arrays
     buffercore_t* buffercore_p_ = new buffercore_t;
-    brxqs_t* brxqs_p_ = new brxqs_t;// rxds("rxdstreams");
-    btxqs_t* btxqs_p_ = new btxqs_t;// txds("txdstreams");
+    brxqs_t* brxqs_p_ = new brxqs_t("sbrxqs");// rxds("rxdstreams");
+    btxqs_t* btxqs_p_ = new btxqs_t("sbtxqs");// txds("txdstreams");
+
     // cast this pointer type to the corresponding private pointers
     buffercore_p = static_cast<void*>(buffercore_p_);
     brxqs_p = static_cast<void*>(brxqs_p_);
@@ -69,7 +70,7 @@ public:
   }
 
   ~SharedBuffer() {
-    // delete buffercore pointer upon destruction
+    // delete (new) pointers upon destruction
     delete static_cast<buffercore_t*>(buffercore_p);
     delete static_cast<brxqs_t*>(brxqs_p);
     delete static_cast<btxqs_t*>(btxqs_p);
@@ -94,22 +95,14 @@ public:
     "Cannot provide concurrency more than total i/o-ports");
   }
 
-  brxq_t get_iport(sb_portid_t _rx_idx)
+  brxq_t get_rxq(sb_portid_t _rx_idx)
   {
-    return (static_cast<brxqs_t*>(brxqs_p))[_rx_idx];
+    return (*static_cast<brxqs_t*>(brxqs_p))[_rx_idx];
   }
 
-  btxq_t get_oport(sb_portid_t _tx_idx)
+  btxq_t get_txq(sb_portid_t _tx_idx)
   {
-    return (static_cast<btxqs_t*>(btxqs_p))[_tx_idx];
-  }
-
-  sb_pageid_t request_page(brxq_t* req, sb_pageid_t pages_to_allocate)
-  {
-    return 0;
-    // check if there are enough free pages available.
-
-    // if yes, allocate
+    return (*static_cast<btxqs_t*>(btxqs_p))[_tx_idx];
   }
 
 };
