@@ -4,115 +4,76 @@
 
 using sb_t = SharedBuffer<sb_msg_t, SB_NUM_PAGES, SB_NRX, SB_NTX, (SB_NRX+SB_NTX)>;
 
-void vadd(tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_a,
-          tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_b,
-          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_c,
-          int n_tiles) {
-  for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
-#pragma HLS pipeline off
-
-    auto section_a = buffer_a.acquire();
-    auto section_b = buffer_b.acquire();
-    auto section_c = buffer_c.acquire();
-
-    auto& buf_rf_a = section_a();
-    auto& buf_rf_b = section_b();
-    auto& buf_rf_c = section_c();
-
-COMPUTE_LOOP:
-    for (int j = 0; j < TILE; j++) {
-#pragma HLS pipeline II=1
-#pragma HLS unroll factor=2
-      buf_rf_c[j] = buf_rf_a[j] + buf_rf_b[j];
-    }
+void Mmap2Stream(tapa::mmap<const float> mmap,
+                 tapa::ostream<float>& stream) {
+  for (uint64_t i = 0; i < N; ++i) {
+    stream << mmap[i];
   }
 }
 
-//////////////////
-/// LOAD
-//////////////////
-
-
-void load(tapa::mmap<bits<data_type_mmap>> argmmap,
-          tapa::obuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_load,
-          int n_tiles) {
-  for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
-    #pragma HLS pipeline off
-    auto section = buffer_load.acquire();
-    auto& buf_ref = section();
-    data_type temp;
-    for (int j = 0; j < TILE/PACK_LENGTH; j++) {
-      #pragma HLS pipeline II=1
-      // #pragma HLS unroll factor=2
-      auto packvec = tapa::bit_cast<data_type_mmap>(argmmap[tile_id*TILE/(PACK_LENGTH) + j]);
-      buf_ref[2*j] = float(packvec[0]);
-      buf_ref[2*j+1] = float(packvec[1]);
-    }
+void Stream2Mmap(tapa::istream<float>& stream,
+                  tapa::mmap<float> mmap) {
+  for (uint64_t i = 0; i < N; ++i) {
+    stream >> mmap[i];
   }
 }
 
-//////////////////
-/// STORE
-//////////////////
-void store(tapa::mmap<bits<data_type_mmap>> argmmap,
-           tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer_store,
-           int n_tiles) {
-  for (int tile_id = 0; tile_id < n_tiles; tile_id++) {
-#pragma HLS pipeline off
-    auto section = buffer_store.acquire();
-    auto& buf_ref = section();
-    for (int j = 0; j < TILE/PACK_LENGTH; j++) {
-#pragma HLS pipeline II=1
-      data_type_mmap packvec;
-      packvec[0] = buf_ref[2*j];
-      packvec[1] = buf_ref[2*j+1];
-      argmmap[tile_id*TILE/(PACK_LENGTH) + j] = tapa::bit_cast<bits<data_type_mmap>>(packvec);
-    }
+void vadd(tapa::istream<float>& a,
+          tapa::istream<float>& b,
+          tapa::ostream<float>& c,
+          uint64_t n) {
+  for (uint64_t i = 0; i < N; ++i) {
+    c << (a.read() + b.read());
   }
 }
 
-void task1( tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
+void task1( tapa::istream<float>& vector_a,
             tapa::ostream<sb_msg_t>& tx_task1_to_sb,
             tapa::istream<sb_msg_t>& rx_sb_to_task1,
-            tapa::ostream<sb_pageid_t>& tx_task1_to_task2)
+            tapa::ostream<float>& tx_task1_to_task2)
 {
   SBIF<sb_msg_t, 2, 2> sbif1(rx_sb_to_task1, tx_task1_to_sb);
   sb_msg_t rsp;
   rsp = sbif1.grab_page(1);
-  
+  for (uint64_t i = 0; i < N; ++i)
+  {
+    tx_task1_to_task2 << vector_a.read();
+  }
 }
 
-void task2( tapa::ibuffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& buffer,
-            sb_t sbo,
+void task2( tapa::istream<float>& vector_b,
+            tapa::ostream<float>& vector_c,
             tapa::ostream<sb_msg_t>& tx_task2_to_sb,
             tapa::istream<sb_msg_t>& rx_sb_to_task2,
-            tapa::istream<sb_pageid_t>& rx_task1_to_task2)
+            tapa::istream<float>& rx_task1_to_task2)
 {
-  
+  for (uint64_t i = 0; i < N; ++i)
+  {
+    // vector_c << (float)(0);
+    vector_c << vector_b.read() + rx_task1_to_task2.read();
+    // printf("%f %f\n", vector_b.read() + rx_task1_to_task2.read());
+  }
 }
 
 ////////////////
 /// WRAPPER
 ////////////////
 
-void VecAdd(tapa::mmap<bits<data_type_mmap>> vector_a,
-            tapa::mmap<bits<data_type_mmap>> vector_b,
-            tapa::mmap<bits<data_type_mmap>> vector_c,
-            uint64_t n_tiles) {
-
-  sb_t sbo;
-  // std::cout << sbo.get_iport(1) << std::endl;
+void VecAdd(tapa::mmap<const float> vector_a,
+            tapa::mmap<const float> vector_b,
+            tapa::mmap<float> vector_c) {
+  tapa::stream<float> a_q("a");
+  tapa::stream<float> b_q("b");
+  tapa::stream<float> c_q("c");
+  tapa::stream<float> task1_to_task2_pageinfo ("task1_to_task2_pageinfo");
   std::cout << "===" << std::endl;
-  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_a;
-  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_b;
-  tapa::buffer<data_type[TILE], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> buffer_c;
-  
+  sb_t sbo;
   
   tapa::task()
-    .invoke(load, vector_a, buffer_a, n_tiles)
-    .invoke(load, vector_b, buffer_b, n_tiles)
-    .invoke(task1, buffer_a, sbo, sbo.get_iport(0), sbo.get_oport(0))
-    .invoke(task2, buffer_b, sbo, sbo.get_iport(1), sbo.get_oport(1))
-    // .invoke(readFromBuffer, buffer_c, sbif_task3)
-    .invoke(store, vector_c, buffer_c, n_tiles);
+    .invoke(Mmap2Stream, vector_a, a_q)
+    .invoke(Mmap2Stream, vector_b, b_q)
+    // .invoke(vadd, a_q, b_q, c_q, n_tiles)
+    .invoke(task1, a_q,      sbo.get_rxq(0), sbo.get_txq(0), task1_to_task2_pageinfo)
+    .invoke(task2, b_q, c_q, sbo.get_rxq(1), sbo.get_txq(1), task1_to_task2_pageinfo)
+    .invoke(Stream2Mmap, c_q, vector_c);
 }
