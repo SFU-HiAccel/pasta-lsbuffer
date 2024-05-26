@@ -22,7 +22,7 @@ sb_rsp_t std_to_rsp(sb_std_t rx_std)
 
 
 // Request Router
-void rqr(tapa::istream<sb_req_t>& rbuf_to_rqp,
+void rqr(tapa::istream<sb_req_t>& rbuf_to_rqr,
         tapa::ostream<sb_std_t>& rqr_to_rqp_grab,
         tapa::ostream<sb_std_t>& rqr_to_rqp_free,
         tapa::ostream<sb_std_t>& rqr_to_rqp_read,
@@ -31,7 +31,7 @@ void rqr(tapa::istream<sb_req_t>& rbuf_to_rqp,
     for(bool valid;;)
     {
         // peek whether value is available
-        sb_req_t req = rbuf_to_rqp.peek(valid);
+        sb_req_t req = rbuf_to_rqr.peek(valid);
         bool fwd_rqp_free   = valid && (req.fields.code == SB_REQ_FREE_PAGE);
         bool fwd_rqp_grab   = valid && (req.fields.code == SB_REQ_GRAB_PAGE);
         bool fwd_rqp_read   = valid && (req.fields.code == SB_REQ_READ_MSGS);
@@ -51,7 +51,16 @@ void rqr(tapa::istream<sb_req_t>& rbuf_to_rqp,
 }
 
 
-// Request Parser
+/**
+ * Task     : Request Parser
+ * Purpose  : The Request Parser is the intercept between blocking and
+ *              non-blocking requests. Non-blocking requests are directly
+ *              forwarded to the I/OHD while the GRAB and FREE queues
+ *              are intercepted and the performance optimised IOHD streams
+ *              are gated while this happens.
+ * TODO: Currently the IOHD streams are only 1 each for read and write. It
+ *          needs to be made into a vector of streams based on the concurrency
+ * */
 void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
         tapa::istream<sb_std_t>& rqr_to_rqp_grab,
         tapa::istream<sb_std_t>& rqr_to_rqp_free,
@@ -113,7 +122,13 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
     }
 }
 
-
+/**
+ * Task     : Page Manager
+ * Purpose  : The page-manager is responsible for maintaining all information
+ *              related to the page allocation/deallocations
+ *              THIS PATH IS NOT OPTIMISED FOR PERFORMANCE.
+ *
+*/
 void pgm(tapa::istream<sb_std_t>& rqp_to_pgm_grab,
         tapa::istream<sb_std_t>& rqp_to_pgm_free,
         tapa::ostream<sb_std_t>& pgm_to_rqp_sts) {
@@ -200,6 +215,15 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
     }
 }
 
+/**
+ * Task     : I/OHD
+ * Purpose  : The IOHD is responsible for the grunt work of the data transfer
+ *              related to the requests. The input and output streams
+ *              from RQP and to RSG will later be widened based on NRX and NTX,
+ *              allowing multiple requests to be parsed in parallel.
+ *              THIS PATH MUST BE OPTIMISED FOR PERFORMANCE.
+ *
+*/
 void ihd(tapa::istream<sb_std_t>& rqp_to_ihd_read,
         tapa::ostream<sb_std_t>& ihd_to_rsg_read,
         tapa::ibuffer<sb_std_t>& backend_pages) {
