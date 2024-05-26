@@ -66,12 +66,14 @@ void VecAdd(tapa::mmap<const float> vector_a,
   tapa::stream<float> b_q("b");
   tapa::stream<float> c_q("c");
   tapa::stream<float> task1_to_task2_pageinfo ("task1_to_task2_pageinfo");
+  tapa::stream<float> dummy ("dummy");
   std::cout << "===" << std::endl;
   sb_t sbo;
   
   tapa::task()
     .invoke(Mmap2Stream, vector_a, a_q)
     .invoke(Mmap2Stream, vector_b, b_q)
+    .invoke((sbo.sb_task), dummy)
     // .invoke(vadd, a_q, b_q, c_q, n_tiles)
     .invoke(task1, a_q,      sbo.get_rxq(0), sbo.get_txq(0), task1_to_task2_pageinfo)
     .invoke(task2, b_q, c_q, sbo.get_rxq(1), sbo.get_txq(1), task1_to_task2_pageinfo)
