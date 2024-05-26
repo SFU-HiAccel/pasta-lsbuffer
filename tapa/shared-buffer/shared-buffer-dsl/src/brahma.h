@@ -160,16 +160,84 @@ void tx_arbiter(tapa::ostreams<sb_msg_t, SB_NTX>& btxqs,
 }
 
 // task wrapper that should be invoked at the kernel's top wrapper
-void sb_task(tapa::istream<float>& dummy)
+void sb_task()
 {
+  // RQR  <--->  RQP
+  tapa::stream<sb_std_t> rqr_to_rqp_grab("rqr_to_rqp_grab");
+  tapa::stream<sb_std_t> rqr_to_rqp_free("rqr_to_rqp_free");
+  tapa::stream<sb_std_t> rqr_to_rqp_read("rqr_to_rqp_read");
+  tapa::stream<sb_std_t> rqr_to_rqp_write("rqr_to_rqp_write");
+  // RQP  <--->  PGM
+  tapa::stream<sb_std_t> rqp_to_pgm_grab("rqp_to_pgm_grab");
+  tapa::stream<sb_std_t> rqp_to_pgm_free("rqp_to_pgm_free");
+  tapa::stream<sb_std_t> pgm_to_rqp_sts("pgm_to_rqp_sts");
+  // RQP  <--->  RSG
+  tapa::stream<sb_std_t> rqp_to_rsg_grab("rqp_to_rsg_grab");
+  tapa::stream<sb_std_t> rqp_to_rsg_free("rqp_to_rsg_free");
+  tapa::stream<sb_std_t> rqp_to_rsg_read("rqp_to_rsg_read");
+  tapa::stream<sb_std_t> rqp_to_rsg_write("rqp_to_rsg_write");
+
+  /// PERFORMANCE CRITICAL STREAMS ///
+  // RBUF <--->  RQP
+  tapa::stream<sb_std_t> rbuf_to_rqr("rbuf_to_rqr");
+  // RQP  <--->  IHD
+  tapa::stream<sb_std_t> rqp_to_ihd_read("rqp_to_ihd_read");
+  // RQP  <--->  OHD
+  tapa::stream<sb_std_t> rqp_to_ohd_write("rqp_to_ohd_write");
+  // IHD  <--->  RSG
+  tapa::stream<sb_std_t> ihd_to_rsg_read("ihd_to_rsg_read");
+  // IHD  <--->  RSG
+  tapa::stream<sb_std_t> ohd_to_rsg_write("ohd_to_rsg_write");
+  // RSG  <--->  RBUF
+  tapa::stream<sb_std_t> rsg_to_rbuf("rsg_to_rbuf");
+
+  // actual buffers
+  buffercore_t backend_pages("backend_pages")
+
   tapa::task()
     .invoke<tapa::detach>(rx_arbiter, (*brxqs_p), (*arbit_rxq_p))
     .invoke<tapa::detach>(tx_arbiter, (*arbit_txq_p), (*btxqs_p))
-    .invoke<tapa::detach>(fe_request_handler, (*arbit_rxq_p), (*req_rbuf))
-    .invoke<tapa::detach>(fe_response_handler, rsp_rbuf, (*arbit_txq_p))
-    .invoke<tapa::detach>(datapath, ) // this will have fe and be rbufs inside
-    .invoke<tapa::detach>(be_request_handler, (*req_rbuf), )
-    .invoke<tapa::detach>(be_response_handler, (*btxqs_p), (*arbit_txq_p))
+    .invoke<tapa::detach>(rqr,
+                            (*arbit_rxq_p),
+                            rqr_to_rqp_grab,
+                            rqr_to_rqp_free,
+                            rqr_to_rqp_read,
+                            rqr_to_rqp_write)
+    .invoke<tapa::detach>(rqp,
+                            (*arbit_rxq_p),
+                            pgm_to_rqp_sts,
+                            rqr_to_rqp_grab,
+                            rqr_to_rqp_free,
+                            rqr_to_rqp_read,
+                            rqr_to_rqp_write,
+                            rqp_to_pgm_grab,
+                            rqp_to_pgm_free,
+                            rqp_to_rsg_grab,
+                            rqp_to_rsg_free,
+                            rqp_to_rsg_read,
+                            rqp_to_rsg_write,
+                            rqp_to_ihd_read,
+                            rqp_to_ohd_write)
+    .invoke<tapa::detach>(pgm,
+                            rqp_to_pgm_grab,
+                            rqp_to_pgm_free,
+                            pgm_to_rqp_sts)
+    .invoke<tapa::detach>(rsg,
+                            rqp_to_rsg_grab,
+                            rqp_to_rsg_free,
+                            rqp_to_rsg_read,
+                            rqp_to_rsg_write,
+                            ihd_to_rsg_read,
+                            ohd_to_rsg_write,
+                            rsg_to_rbuf) // this will have fe and be rbufs inside
+    .invoke<tapa::detach>(ihd,
+                            rqp_to_ihd_read,
+                            ihd_to_rsg_read,
+                            backend_pages)
+    .invoke<tapa::detach>(ohd,
+                            rqp_to_ohd_write,
+                            ohd_to_rsg_write,
+                            backend_pages);
 }
 
 #endif // __SB_H__
