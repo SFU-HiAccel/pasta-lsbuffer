@@ -8,51 +8,6 @@
 #include "sb_tasks.h"
 
 /**
- * datatype_t --> type of the data packet (page) that will be ID-ed.
- *                All headers and bookkeeping is appended within sharedBuffer.
- * SB_NRX     --> Number of input ports (producers)
- * SB_NTX     --> Number of output ports (consumers)
- * npages     --> Total number of buffer-blocks (pages) to maintain
- * concurrency--> Number of concurrent operations to allow.
- *                concurrency <= (SB_NRX+SB_NTX)
-*/
-typedef struct
-{
-  union{
-    uint8_t valid : 1;
-    uint8_t pad   : 7;
-  }header;
-  sb_pageid_t pageid;
-}sb_metadata_t;
-
-sb_metadata_t metadata_t[SB_NUM_PAGES] = {0};
-bool valid_pages[8][(SB_NUM_PAGES>>3)] = {0};
-
-// used to set pageids in metadata when that page is requested for the first time
-sb_pageid_t pageid_init_counter = 0;
-
-uint8_t arbit_rx;
-uint8_t arbit_tx;
-bool tx_available; // must update with notif counter checking  
-
-// create temporary pointers to the buffercore and stream-arrays
-// buffercore_t* buffercore_p_ = new buffercore_t;
-// cast this pointer type to the corresponding private pointers
-// buffercore_p = static_cast<void*>(buffercore_p_);
-
-// declare all stream types
-using buffercore_t  = tapa::buffer<sb_msg_t[npages], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
-using brxqs_t  = tapa::streams<sb_msg_t, SB_NRX>;
-using btxqs_t  = tapa::streams<sb_msg_t, SB_NTX>;
-using brxq_t   = tapa::stream<sb_msg_t>;
-using btxq_t   = tapa::stream<sb_msg_t>;
-brxqs_t* brxqs_p;// = nullptr;
-btxqs_t* btxqs_p;// = nullptr;
-brxq_t* arbit_rxq_p;// = nullptr;
-btxq_t* arbit_txq_p;// = nullptr;
-
-
-/**
  * a list of lines that must be patched directly
  * before calling tapa::task().invokes
  * */
@@ -108,7 +63,6 @@ btxq_t sb_get_txq(sb_portid_t _tx_idx)
 ///////////////////////////////////
 ///     SHARED BUFFER TASKS     ///
 ///////////////////////////////////
-
 
 // main request handler
 void request_handler(tapa::ostream<sb_msg_t>& arbit_rxq)
