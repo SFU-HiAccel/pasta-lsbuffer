@@ -10,9 +10,9 @@
 
 #define SB_NUM_PAGES        (64)
 #define SB_WORD_SIZE        (4)
-#define SB_WORD_SIZE_BITS   (32) // TODO: SBIF_WORD_SIZE << 3
+#define SB_WORD_SIZE_BITS   (32)    // TODO: SBIF_WORD_SIZE << 3
 #define SB_PAGE_SIZE        (1024)
-#define SB_WORDS_PER_PAGE   (256) // TODO: SB_PAGE_SIZE/SB_WORD_SIZE
+#define SB_WORDS_PER_PAGE   (256)   // TODO: SB_PAGE_SIZE/SB_WORD_SIZE
 
 using sb_portid_t     = uint8_t;
 using sb_pageid_t     = uint16_t;
@@ -81,16 +81,47 @@ typedef struct {
   bool c_dn;
 }sb_std_t;
 
+
 /**
- * SBIF 
- * Consider an example where 2 tasks connect to the shared buffer.
- * Task1 can contain 1 TX msg/line and 2 RX msg-lines.
- * Task2 can contain 2 TX msg/lines and 1 RX msg-line.
- * The corresponding sbif on the the shared buffer shall contain:
- *  at least 1 RX msg/line and 2 TX msg/lines for Task1
- *  at least 2 RX msg/lines and 1 TX msg/line for Task2
+ * datatype_t --> type of the data packet (page) that will be ID-ed.
+ *                All headers and bookkeeping is appended within sharedBuffer.
+ * SB_NRX     --> Number of input ports (producers)
+ * SB_NTX     --> Number of output ports (consumers)
+ * npages     --> Total number of buffer-blocks (pages) to maintain
+ * concurrency--> Number of concurrent operations to allow.
+ *                concurrency <= (SB_NRX+SB_NTX)
 */
-// constexpr sbif_depth_t sbif_depths_rx[3] = {1,2,3};
+typedef struct
+{
+  union{
+    uint8_t valid : 1;
+    uint8_t pad   : 7;
+  }header;
+  sb_pageid_t pageid;
+}sb_metadata_t;
+
+sb_metadata_t metadata_t[SB_NUM_PAGES] = {0};
+bool valid_pages[8][(SB_NUM_PAGES>>3)] = {0};
+
+// used to set pageids in metadata when that page is requested for the first time
+sb_pageid_t pageid_init_counter = 0;
+
+uint8_t arbit_rx;
+uint8_t arbit_tx;
+bool tx_available; // must update with notif counter checking  
+
+// declare all stream types
+using buffercore_t  = tapa::buffer<sb_msg_t[npages], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
+using ibuffercore_t  = tapa::ibuffer<sb_msg_t[npages], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
+using obuffercore_t  = tapa::obuffer<sb_msg_t[npages], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
+using brxqs_t  = tapa::streams<sb_msg_t, SB_NRX>;
+using btxqs_t  = tapa::streams<sb_msg_t, SB_NTX>;
+using brxq_t   = tapa::stream<sb_msg_t>;
+using btxq_t   = tapa::stream<sb_msg_t>;
+brxqs_t* brxqs_p;// = nullptr;
+btxqs_t* btxqs_p;// = nullptr;
+brxq_t* arbit_rxq_p;// = nullptr;
+btxq_t* arbit_txq_p;// = nullptr;
 
 
 #endif // __SB_CONFIG_H__
