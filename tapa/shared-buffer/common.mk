@@ -34,8 +34,8 @@ endif
 
 KERNEL_CO=${BUILD_DIR_PREFIX}/${KERNEL}
 KERNEL_XO="${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw.xo"
-KERNEL_XCLBIN_EM="${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw_emu.xclbin"
-KERNEL_XCLBIN_HW="${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw.xclbin"
+KERNEL_XCLBIN_EM="${BUILD_DIR_PREFIX}/vitis_run_hw_emu/${KERNEL}.${PLATFORM}.hw_emu.xclbin"
+KERNEL_XCLBIN_HW="${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL}.${PLATFORM}.hw.xclbin"
 
 RUNXOVDBG_OUTPUT_DIR="${BUILD_DIR_PREFIX}/vitis_run_hw_emu"
 
@@ -57,30 +57,32 @@ ${KERNEL_CO}: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
 ################
 ### HW_EMU
 ################
-xo: 
+
+xo: ${KERNEL_XO}
+
 ${KERNEL_XO}: ${KERNEL_CO}
-ifndef PLATFORM
-$(error No PLATFORM is set!)
-endif
 	@echo "[MAKE]: Compiling for XO target"
 	tapac -o ${KERNEL_XO} src/${KERNEL}.cpp --platform ${PLATFORM} --top ${KERNEL_TOP} --work-dir ${KERNEL_XO}.tapa --enable-buffer-support --connectivity connectivity.ini --max-parallel-synth-jobs 24 --separate-complex-buffer-tasks
 
 runxo: xo
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Running HW_EMU (.xo)"
+	@cd ${BUILD_DIR_PREFIX}
 	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XO}
 
-runxodbg: xo
+runxodbg: ${KERNEL_XO}
 	@echo "[MAKE]: Target waveform"
 	@echo "[MAKE]: Running waveform for HW_EMU (.xo)"
+	@cd ${BUILD_DIR_PREFIX}
 	-${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XO} -xosim_work_dir xosim -xosim_save_waveform
 	@head -n -2 xosim/output/run/run_cosim.tcl > xosim/output/run/run_cosim_no_exit.tcl
 	@echo "open_wave_config {wave.wcfg}" >> xosim/output/run/run_cosim_no_exit.tcl
 	vivado -mode gui -source xosim/output/run/run_cosim_no_exit.tcl
 
-runxov: xo
+runxov: ${KERNEL_XO}
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Building .xclbin through Vitis"
+	@cd ${BUILD_DIR_PREFIX}
 	v++ -o ${KERNEL_XCLBIN_EM} \
 	--link \
 	--target hw_emu\
@@ -91,9 +93,10 @@ runxov: xo
 	@cd ${BUILD_DIR_PREFIX}
 	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XCLBIN_EM}
 
-runxovdbg: xo
+runxovdbg: ${KERNEL_XO}
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Building .xclbin through Vitis"
+	@cd ${BUILD_DIR_PREFIX}
 	export XRT_INI_PATH=scripts/xrt.ini
 	v++ -g \
 	--link \
@@ -125,17 +128,15 @@ runxovdbg: xo
 ################
 hw: ${KERNEL_XCLBIN_HW}
 
-${KERNEL_XCLBIN_HW}: ${KERNEL_XO}
-ifndef PLATFORM
-$(error No PLATFORM is set!)
-endif
+${KERNEL_XCLBIN_HW}: xo
 	@echo "[MAKE]: Building HW target"
-	source ${KERNEL}.${PLATFORM}.hw_generate_bitstream.sh
+	@cd ${BUILD_DIR_PREFIX}
+	source ${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw_generate_bitstream.sh
 
-runhw: hw
+runhw: ${KERNEL_XCLBIN_HW}
 	@echo "[MAKE]: Target HW"
 	@echo "[MAKE]: Running HW (.xclbin)"
-	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=vitis_run_hw/${KERNEL_XCLBIN_HW}
+	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL_XCLBIN_HW}
 
 ### CLEAN
 cleanall: clean cleanxo cleandbg cleanhw
