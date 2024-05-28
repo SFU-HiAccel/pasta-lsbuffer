@@ -5,8 +5,9 @@
 ///  SB CONFIG  ///
 ///////////////////
 
-#define SB_NRX  (2)
-#define SB_NTX  (2)
+#define SB_NXCTRS (2)
+#define SB_NRX    (SB_NXCTRS)
+#define SB_NTX    (SB_NXCTRS)
 
 #define SB_NUM_PAGES        (64)
 #define SB_WORD_SIZE        (4)
