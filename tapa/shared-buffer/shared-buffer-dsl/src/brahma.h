@@ -146,7 +146,7 @@ void sb_task()
   tapa::stream<sb_std_t> rsg_to_rbuf("rsg_to_rbuf");
 
   // actual buffers
-  buffercore_t backend_pages("backend_pages")
+  buffercore_t backend_pages("backend_pages");
 
   tapa::task()
     .invoke<tapa::detach>(rx_arbiter, (*brxqs_p), (*arbit_rxq_p))
