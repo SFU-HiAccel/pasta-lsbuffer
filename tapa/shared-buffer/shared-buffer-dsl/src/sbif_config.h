@@ -13,7 +13,7 @@
 #define SB_WORD_SIZE        (4)
 #define SB_WORD_SIZE_BITS   (32)    // TODO: SBIF_WORD_SIZE << 3
 #define SB_PAGE_SIZE        (1024)
-#define SB_WORDS_PER_PAGE   (256)   // TODO: SB_PAGE_SIZE/SB_WORD_SIZE
+#define SB_MSGS_PER_PAGE    (256)   // TODO: SB_PAGE_SIZE/SB_WORD_SIZE
 
 using sb_portid_t     = uint8_t;
 using sb_pageid_t     = uint16_t;
@@ -111,18 +111,21 @@ uint8_t arbit_rx;
 uint8_t arbit_tx;
 bool tx_available; // must update with notif counter checking  
 
+// declare all buffer types
+using buffercore_t  = tapa::buffers<sb_msg_t[SB_MSGS_PER_PAGE], SB_NUM_PAGES, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
+using ibuffercore_t = tapa::ibuffers<sb_msg_t[SB_MSGS_PER_PAGE], SB_NUM_PAGES, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
+using obuffercore_t = tapa::obuffers<sb_msg_t[SB_MSGS_PER_PAGE], SB_NUM_PAGES, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
 // declare all stream types
-using buffercore_t  = tapa::buffer<sb_msg_t[npages], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
-using ibuffercore_t  = tapa::ibuffer<sb_msg_t[npages], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
-using obuffercore_t  = tapa::obuffer<sb_msg_t[npages], 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
-using brxqs_t  = tapa::streams<sb_msg_t, SB_NRX>;
-using btxqs_t  = tapa::streams<sb_msg_t, SB_NTX>;
-using brxq_t   = tapa::stream<sb_msg_t>;
-using btxq_t   = tapa::stream<sb_msg_t>;
-brxqs_t* brxqs_p;// = nullptr;
-btxqs_t* btxqs_p;// = nullptr;
-brxq_t* arbit_rxq_p;// = nullptr;
-btxq_t* arbit_txq_p;// = nullptr;
+using brxqs_t  = tapa::streams<sb_req_t, SB_NXCTRS>;
+using btxqs_t  = tapa::streams<sb_rsp_t, SB_NXCTRS>;
+using brxq_t   = tapa::stream<sb_req_t>;
+using btxq_t   = tapa::stream<sb_rsp_t>;
+brxqs_t sb_rxqs("sb_rxqs");
+btxqs_t sb_txqs("sb_txqs");
+// brxqs_t* brxqs_p;// = nullptr;
+// btxqs_t* btxqs_p;// = nullptr;
+// brxq_t* arbit_rxq_p;// = nullptr;
+// btxq_t* arbit_txq_p;// = nullptr;
 
 
 #endif // __SB_CONFIG_H__

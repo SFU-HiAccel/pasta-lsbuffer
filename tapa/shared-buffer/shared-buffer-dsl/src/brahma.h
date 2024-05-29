@@ -3,7 +3,6 @@
 #include <stdint.h>
 #include <iostream>
 #include "sbif_config.h"
-#include "sbif.h"
 #include "tapa.h"
 #include "sb_tasks.h"
 
@@ -11,14 +10,12 @@
  * a list of lines that must be patched directly
  * before calling tapa::task().invokes
  * */
-inline void sb_declarations()
-{
-  brxqs_p = new brxqs_t("sbrxqs");
-  btxqs_p = new btxqs_t("sbtxqs");
-  arbit_rxq_p = new brxq_t("sb_arbit_rxq");
-  arbit_txq_p = new btxq_t("sb_arbit_txq");
-  arbit_tx = 0; arbit_rx = 0; tx_available = false;
-}
+// inline void sb_declarations()
+// {
+//   arbit_rxq_p = new brxq_t("sb_arbit_rxq");
+//   arbit_txq_p = new btxq_t("sb_arbit_txq");
+//   arbit_tx = 0; arbit_rx = 0; tx_available = false;
+// }
 
 /**
  * validate the configuration of the buffer. Expected to be a bunch of
@@ -44,20 +41,20 @@ bool validate_config()
  * get_rxq: returns the pointer to a specific index of the request queues array.
  *          These queues are RX relative to the SB
  * */
-brxq_t sb_get_rxq(sb_portid_t _rx_idx)
+inline brxq_t sb_get_rxq(sb_portid_t _rx_idx)
 {
   // use the pointers we declared above (see sb_declarations())
-  return (*brxqs_p)[_rx_idx];
+  return sb_rxqs[_rx_idx];
 }
 
 /**
  * get_txq: returns the pointer to a specific index of the response queues array.
  *          These queues are TX relative to the SB
  * */
-btxq_t sb_get_txq(sb_portid_t _tx_idx)
+inline btxq_t sb_get_txq(sb_portid_t _tx_idx)
 {
   // use the pointers we declared above (see sb_declarations())
-  return (*btxqs_p)[_tx_idx];
+  return sb_txqs[_tx_idx];
 }
 
 ///////////////////////////////////
@@ -116,11 +113,15 @@ void tx_arbiter(tapa::ostreams<sb_msg_t, SB_NTX>& btxqs,
 // task wrapper that should be invoked at the kernel's top wrapper
 void sb_task()
 {
+  // Main interface
+  // tapa::streams<sb_req_t, SB_NXCTRS> sb_rxqs("sb_rxqs");
+  // tapa::streams<sb_rsp_t, SB_NXCTRS> sb_txqs("sb_txqs");
+
   // RQR  <--->  RQP
   tapa::stream<sb_std_t> rqr_to_rqp_grab("rqr_to_rqp_grab");
   tapa::stream<sb_std_t> rqr_to_rqp_free("rqr_to_rqp_free");
-  tapa::stream<sb_std_t> rqr_to_rqp_read("rqr_to_rqp_read");
-  tapa::stream<sb_std_t> rqr_to_rqp_write("rqr_to_rqp_write");
+  tapa::streams<sb_std_t, SB_NXCTRS> rqr_to_rqp_read("rqr_to_rqp_read");
+  tapa::streams<sb_std_t, SB_NXCTRS> rqr_to_rqp_write("rqr_to_rqp_write");
   // RQP  <--->  PGM
   tapa::stream<sb_std_t> rqp_to_pgm_grab("rqp_to_pgm_grab");
   tapa::stream<sb_std_t> rqp_to_pgm_free("rqp_to_pgm_free");
@@ -128,46 +129,45 @@ void sb_task()
   // RQP  <--->  RSG
   tapa::stream<sb_std_t> rqp_to_rsg_grab("rqp_to_rsg_grab");
   tapa::stream<sb_std_t> rqp_to_rsg_free("rqp_to_rsg_free");
-  tapa::stream<sb_std_t> rqp_to_rsg_read("rqp_to_rsg_read");
-  tapa::stream<sb_std_t> rqp_to_rsg_write("rqp_to_rsg_write");
+  tapa::streams<sb_std_t, SB_NXCTRS> rqp_to_rsg_read("rqp_to_rsg_read");
+  tapa::streams<sb_std_t, SB_NXCTRS> rqp_to_rsg_write("rqp_to_rsg_write");
 
   /// PERFORMANCE CRITICAL STREAMS ///
   // RBUF <--->  RQP
-  tapa::stream<sb_std_t> rbuf_to_rqr("rbuf_to_rqr");
+  tapa::streams<sb_std_t, SB_NXCTRS> rbuf_to_rqr("rbuf_to_rqr");
   // RQP  <--->  IHD
-  tapa::stream<sb_std_t> rqp_to_ihd_read("rqp_to_ihd_read");
+  tapa::streams<sb_std_t, SB_NXCTRS> rqp_to_ihd_read("rqp_to_ihd_read");
   // RQP  <--->  OHD
-  tapa::stream<sb_std_t> rqp_to_ohd_write("rqp_to_ohd_write");
+  tapa::streams<sb_std_t, SB_NXCTRS> rqp_to_ohd_write("rqp_to_ohd_write");
   // IHD  <--->  RSG
-  tapa::stream<sb_std_t> ihd_to_rsg_read("ihd_to_rsg_read");
+  tapa::streams<sb_std_t, SB_NXCTRS> ihd_to_rsg_read("ihd_to_rsg_read");
   // IHD  <--->  RSG
-  tapa::stream<sb_std_t> ohd_to_rsg_write("ohd_to_rsg_write");
+  tapa::streams<sb_std_t, SB_NXCTRS> ohd_to_rsg_write("ohd_to_rsg_write");
   // RSG  <--->  RBUF
-  tapa::stream<sb_std_t> rsg_to_rbuf("rsg_to_rbuf");
+  tapa::streams<sb_std_t, SB_NXCTRS> rsg_to_rbuf("rsg_to_rbuf");
 
   // actual buffers
-  buffercore_t backend_pages("backend_pages");
+  buffercore_t backend_pages;
 
   tapa::task()
-    .invoke<tapa::detach>(rx_arbiter, (*brxqs_p), (*arbit_rxq_p))
-    .invoke<tapa::detach>(tx_arbiter, (*arbit_txq_p), (*btxqs_p))
+    // .invoke<tapa::detach>(rx_arbiter, (*brxqs_p), (*arbit_rxq_p))
+    // .invoke<tapa::detach>(tx_arbiter, (*arbit_txq_p), (*btxqs_p))
     .invoke<tapa::detach>(rqr,
-                            (*arbit_rxq_p),
+                            sb_rxqs,
                             rqr_to_rqp_grab,
                             rqr_to_rqp_free,
                             rqr_to_rqp_read,
                             rqr_to_rqp_write)
     .invoke<tapa::detach>(rqp,
-                            (*arbit_rxq_p),
                             pgm_to_rqp_sts,
                             rqr_to_rqp_grab,
                             rqr_to_rqp_free,
-                            rqr_to_rqp_read,
-                            rqr_to_rqp_write,
                             rqp_to_pgm_grab,
                             rqp_to_pgm_free,
                             rqp_to_rsg_grab,
                             rqp_to_rsg_free,
+                            rqr_to_rqp_read,
+                            rqr_to_rqp_write,
                             rqp_to_rsg_read,
                             rqp_to_rsg_write,
                             rqp_to_ihd_read,
@@ -183,7 +183,7 @@ void sb_task()
                             rqp_to_rsg_write,
                             ihd_to_rsg_read,
                             ohd_to_rsg_write,
-                            rsg_to_rbuf) // this will have fe and be rbufs inside
+                            sb_txqs) // this will have fe and be rbufs inside
     .invoke<tapa::detach>(ihd,
                             rqp_to_ihd_read,
                             ihd_to_rsg_read,
