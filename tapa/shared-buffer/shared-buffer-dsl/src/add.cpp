@@ -18,8 +18,7 @@ void Stream2Mmap(tapa::istream<float>& stream,
 
 void vadd(tapa::istream<float>& a,
           tapa::istream<float>& b,
-          tapa::ostream<float>& c,
-          uint64_t n) {
+          tapa::ostream<float>& c) {
   for (uint64_t i = 0; i < N; ++i) {
     c << (a.read() + b.read());
   }
@@ -42,8 +41,9 @@ void task1( tapa::istream<float>& vector_a,
   // now wait for the response to be received
   sb_rsp_t rsp;
   rsp = rx_sb_to_task1.read();
-  printf("response message: %lu\n", (uint64_t)rsp.rsp_msg);
-
+  // #ifndef __SYNTHESIS__
+  // printf("response message: %lu\n", (uint64_t)rsp.rsp_msg);
+  // #endif
   for (uint64_t i = 0; i < N; ++i)
   {
     tx_task1_to_task2 << vector_a.read();
@@ -75,15 +75,17 @@ void VecAdd(tapa::mmap<const float> vector_a,
   tapa::stream<float> b_q("b");
   tapa::stream<float> c_q("c");
   tapa::stream<float> task1_to_task2_pageinfo ("task1_to_task2_pageinfo");
-  tapa::stream<float> dummy ("dummy");
   std::cout << "===" << std::endl;
+
+  tapa::streams<sb_req_t, SB_NXCTRS> sb_rxqs("sb_rxqs");
+  tapa::streams<sb_rsp_t, SB_NXCTRS> sb_txqs("sb_txqs");
   
   tapa::task()
     .invoke(Mmap2Stream, vector_a, a_q)
     .invoke(Mmap2Stream, vector_b, b_q)
-    .invoke(sb_task)
-    // .invoke(vadd, a_q, b_q, c_q, n_tiles)
-    .invoke(task1, a_q,      sb_get_rxq(0), sb_get_txq(0), task1_to_task2_pageinfo)
-    .invoke(task2, b_q, c_q, sb_get_rxq(1), sb_get_txq(1), task1_to_task2_pageinfo)
+    .invoke(sb_task, sb_rxqs, sb_txqs)
+    // .invoke(vadd, a_q, b_q, c_q)
+    .invoke(task1, a_q,      sb_rxqs[0], sb_txqs[0], task1_to_task2_pageinfo)
+    .invoke(task2, b_q, c_q, sb_rxqs[1], sb_txqs[1], task1_to_task2_pageinfo)
     .invoke(Stream2Mmap, c_q, vector_c);
 }

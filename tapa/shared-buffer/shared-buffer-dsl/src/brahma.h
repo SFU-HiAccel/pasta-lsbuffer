@@ -7,17 +7,6 @@
 #include "sb_tasks.h"
 
 /**
- * a list of lines that must be patched directly
- * before calling tapa::task().invokes
- * */
-// inline void sb_declarations()
-// {
-//   arbit_rxq_p = new brxq_t("sb_arbit_rxq");
-//   arbit_txq_p = new btxq_t("sb_arbit_txq");
-//   arbit_tx = 0; arbit_rx = 0; tx_available = false;
-// }
-
-/**
  * validate the configuration of the buffer. Expected to be a bunch of
  * static assertions with some helpful messages.
  * This function breaks compilation on an error.
@@ -37,25 +26,25 @@ bool validate_config()
   return true;
 }
 
-/**
- * get_rxq: returns the pointer to a specific index of the request queues array.
- *          These queues are RX relative to the SB
- * */
-inline brxq_t sb_get_rxq(sb_portid_t _rx_idx)
-{
-  // use the pointers we declared above (see sb_declarations())
-  return sb_rxqs[_rx_idx];
-}
+// /**
+//  * get_rxq: returns the pointer to a specific index of the request queues array.
+//  *          These queues are RX relative to the SB
+//  * */
+// inline brxq_t sb_get_rxq(sb_portid_t _rx_idx)
+// {
+//   // use the pointers we declared above (see sb_declarations())
+//   return sb_rxqs[_rx_idx];
+// }
 
-/**
- * get_txq: returns the pointer to a specific index of the response queues array.
- *          These queues are TX relative to the SB
- * */
-inline btxq_t sb_get_txq(sb_portid_t _tx_idx)
-{
-  // use the pointers we declared above (see sb_declarations())
-  return sb_txqs[_tx_idx];
-}
+// /**
+//  * get_txq: returns the pointer to a specific index of the response queues array.
+//  *          These queues are TX relative to the SB
+//  * */
+// inline btxq_t sb_get_txq(sb_portid_t _tx_idx)
+// {
+//   // use the pointers we declared above (see sb_declarations())
+//   return sb_txqs[_tx_idx];
+// }
 
 ///////////////////////////////////
 ///     SHARED BUFFER TASKS     ///
@@ -111,7 +100,8 @@ void tx_arbiter(tapa::ostreams<sb_msg_t, SB_NTX>& btxqs,
 }
 
 // task wrapper that should be invoked at the kernel's top wrapper
-void sb_task()
+void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
+             tapa::ostreams<sb_rsp_t, SB_NXCTRS>& sb_txqs)
 {
   // Main interface
   // tapa::streams<sb_req_t, SB_NXCTRS> sb_rxqs("sb_rxqs");
