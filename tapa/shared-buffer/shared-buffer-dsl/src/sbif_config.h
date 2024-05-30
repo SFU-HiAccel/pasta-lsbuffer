@@ -120,8 +120,6 @@ using brxqs_t  = tapa::streams<sb_req_t, SB_NXCTRS>;
 using btxqs_t  = tapa::streams<sb_rsp_t, SB_NXCTRS>;
 using brxq_t   = tapa::stream<sb_req_t>;
 using btxq_t   = tapa::stream<sb_rsp_t>;
-brxqs_t sb_rxqs("sb_rxqs");
-btxqs_t sb_txqs("sb_txqs");
 // brxqs_t* brxqs_p;// = nullptr;
 // btxqs_t* btxqs_p;// = nullptr;
 // brxq_t* arbit_rxq_p;// = nullptr;
