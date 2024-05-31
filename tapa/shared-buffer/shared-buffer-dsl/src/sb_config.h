@@ -1,6 +1,9 @@
 #ifndef __SB_CONFIG_H__
 #define __SB_CONFIG_H__
 
+#include "tapa.h"
+#include "ap_int.h"
+
 ///////////////////
 ///  SB CONFIG  ///
 ///////////////////
@@ -107,9 +110,9 @@ bool valid_pages[8][(SB_NUM_PAGES>>3)] = {0};
 // used to set pageids in metadata when that page is requested for the first time
 sb_pageid_t pageid_init_counter = 0;
 
-uint8_t arbit_rx;
-uint8_t arbit_tx;
-bool tx_available; // must update with notif counter checking  
+uint8_t arbit_rx = 0;
+uint8_t arbit_tx = 0;
+bool tx_available = 0; // must update with notif counter checking  
 
 // declare all buffer types
 using buffercore_t  = tapa::buffers<sb_msg_t[SB_MSGS_PER_PAGE], SB_NUM_PAGES, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>;
