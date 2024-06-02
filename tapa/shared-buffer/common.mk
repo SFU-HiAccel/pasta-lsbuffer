@@ -62,7 +62,7 @@ xo: ${KERNEL_XO}
 
 ${KERNEL_XO}: ${KERNEL_CO}
 	@echo "[MAKE]: Compiling for XO target"
-	tapac -o ${KERNEL_XO} src/${KERNEL}.cpp --platform ${PLATFORM} --top ${KERNEL_TOP} --work-dir ${KERNEL_XO}.tapa --enable-buffer-support --connectivity connectivity.ini --max-parallel-synth-jobs 24 --separate-complex-buffer-tasks
+	tapac -vv -o ${KERNEL_XO} src/${KERNEL}.cpp --platform ${PLATFORM} --top ${KERNEL_TOP} --work-dir ${KERNEL_XO}.tapa --enable-buffer-support --connectivity connectivity.ini --max-parallel-synth-jobs 24 --separate-complex-buffer-tasks
 
 runxo: xo
 	@echo "[MAKE]: Target HW_EMU"
@@ -70,7 +70,7 @@ runxo: xo
 	@cd ${BUILD_DIR_PREFIX}
 	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XO}
 
-runxodbg: ${KERNEL_XO}
+runxodbg: xo
 	@echo "[MAKE]: Target waveform"
 	@echo "[MAKE]: Running waveform for HW_EMU (.xo)"
 	@cd ${BUILD_DIR_PREFIX}
@@ -79,7 +79,7 @@ runxodbg: ${KERNEL_XO}
 	@echo "open_wave_config {wave.wcfg}" >> xosim/output/run/run_cosim_no_exit.tcl
 	vivado -mode gui -source xosim/output/run/run_cosim_no_exit.tcl
 
-runxov: ${KERNEL_XO}
+runxov: xo
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Building .xclbin through Vitis"
 	@cd ${BUILD_DIR_PREFIX}
@@ -88,12 +88,12 @@ runxov: ${KERNEL_XO}
 	--target hw_emu\
   --kernel ${KERNEL_TOP} \
 	--platform ${PLATFORM} \
-	${KERNEL_XO}.${PLATFORM}.hw.xo
+	${KERNEL_XO}
 	@echo "[MAKE]: Running HW_EMU (.xclbin)"
 	@cd ${BUILD_DIR_PREFIX}
 	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XCLBIN_EM}
 
-runxovdbg: ${KERNEL_XO}
+runxovdbg: xo
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Building .xclbin through Vitis"
 	@cd ${BUILD_DIR_PREFIX}
@@ -136,6 +136,7 @@ ${KERNEL_XCLBIN_HW}: xo
 runhw: ${KERNEL_XCLBIN_HW}
 	@echo "[MAKE]: Target HW"
 	@echo "[MAKE]: Running HW (.xclbin)"
+	@cd ${BUILD_DIR_PREFIX}
 	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL_XCLBIN_HW}
 
 ### CLEAN
