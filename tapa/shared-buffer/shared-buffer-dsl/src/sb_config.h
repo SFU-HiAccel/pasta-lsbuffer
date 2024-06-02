@@ -85,7 +85,6 @@ typedef struct {
   bool c_dn;
 }sb_std_t;
 
-
 /**
  * datatype_t --> type of the data packet (page) that will be ID-ed.
  *                All headers and bookkeeping is appended within sharedBuffer.
