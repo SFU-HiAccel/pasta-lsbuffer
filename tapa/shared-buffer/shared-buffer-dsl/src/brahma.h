@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <iostream>
 #include "tapa.h"
-#include "sbif_config.h"
-#include "sb_tasks.h"
+#include "sb_config.h"
+#include "sbif.h"
 
 void loopback(tapa::istreams<sb_req_t, SB_NXCTRS>& brxqs,
               tapa::ostreams<sb_rsp_t, SB_NXCTRS>& btxqs);
