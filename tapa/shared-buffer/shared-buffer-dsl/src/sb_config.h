@@ -28,8 +28,8 @@ using sb_msg_t        = uint64_t;
 #define SB_REQ_GRAB_PAGE  (0x4)
 #define SB_REQ_FREE_PAGE  (0x8)
 
-#define SB_RSP_WAIT   (0x1)
-#define SB_RSP_DONE   (0x2)
+#define SB_RSP_DONE   (0x1)
+#define SB_RSP_WAIT   (0x2)
 #define SB_RSP_FAIL   (0x4)
 
 /**
@@ -84,6 +84,19 @@ typedef struct {
   };
   bool c_dn;
 }sb_std_t;
+
+/**
+ * For Grab requests:
+ *  number of pages requested should be sent in `pageid` field
+ *  `npages` field is being used to share index of xctr.
+ *
+ * For Free requests:
+ *  index of page to be freed should be shared in `pageid` field.
+ *  `npages` field is being used to share index of xctr.
+ *
+ * For Read/Writes:
+ *  fields reserve their intent of usage.
+ */
 
 /**
  * datatype_t --> type of the data packet (page) that will be ID-ed.
