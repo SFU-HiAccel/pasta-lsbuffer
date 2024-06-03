@@ -191,11 +191,11 @@ void rqr(tapa::istreams<sb_req_t, SB_NXCTRS>& brxqs,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& rqr_to_rqp_write) {
 
   bool valid[SB_NXCTRS] = {0};
-  bool fwd_rqp_free[SB_NXCTRS] = {0},
-  bool fwd_rqp_grab[SB_NXCTRS] = {0},
-  bool fwd_rqp_read[SB_NXCTRS] = {0},
-  for(bool valid[SB_NXCTRS] = {0},
-            fwd_rqp_write[SB_NXCTRS] = {0};;)
+  bool fwd_rqp_free[SB_NXCTRS] = {0};
+  bool fwd_rqp_grab[SB_NXCTRS] = {0};
+  bool fwd_rqp_read[SB_NXCTRS] = {0};
+  bool fwd_rqp_write[SB_NXCTRS] = {0};
+  for(;;)
   {
     for(uint8_t xctr = 0; xctr < SB_NXCTRS; xctr++) // this check is being done for each xctr stream being rxed
     {
