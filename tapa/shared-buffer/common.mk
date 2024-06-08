@@ -36,8 +36,9 @@ KERNEL_CO=${BUILD_DIR_PREFIX}/${KERNEL}
 KERNEL_XO="${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw.xo"
 KERNEL_XCLBIN_EM="${BUILD_DIR_PREFIX}/vitis_run_hw_emu/${KERNEL}.${PLATFORM}.hw_emu.xclbin"
 KERNEL_XCLBIN_HW="${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL}.${PLATFORM}.hw.xclbin"
-
 RUNXOVDBG_OUTPUT_DIR="${BUILD_DIR_PREFIX}/vitis_run_hw_emu"
+VPP_TEMP_DIR="${RUNXOVDBG_OUTPUT_DIR}/${KERNEL_TOP}_${PLATFORM}.temp"
+
 
 .PHONY: all c xo runxo runxodbg runxov runxovdbg hw runhw cleanall clean cleanxo cleanhdl
 
@@ -51,7 +52,7 @@ c: ${KERNEL_CO}
 
 ${KERNEL_CO}: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
 	@echo "[MAKE]: Compiling for C target"
-	g++ -o ${KERNEL_CO} -O2 src/${KERNEL}.cpp src/${KERNEL}-host.cpp -I${XILINX_HLS}/include -ltapa -lfrt -lglog -lgflags -lOpenCL -DTAPA_BUFFER_SUPPORT -std=c++17
+	g++ -g -o ${KERNEL_CO} -O2 src/${KERNEL}.cpp src/${KERNEL}-host.cpp -I${XILINX_HLS}/include -ltapa -lfrt -lglog -lgflags -lOpenCL -DTAPA_BUFFER_SUPPORT -std=c++17
 
 
 ################
@@ -59,27 +60,28 @@ ${KERNEL_CO}: src/${KERNEL}.cpp src/${KERNEL}-host.cpp
 ################
 
 xo: ${KERNEL_XO}
+	@echo "[MAKE]: Looking for prebuilt XO"
 
 ${KERNEL_XO}: ${KERNEL_CO}
 	@echo "[MAKE]: Compiling for XO target"
 	tapac -vv -o ${KERNEL_XO} src/${KERNEL}.cpp --platform ${PLATFORM} --top ${KERNEL_TOP} --work-dir ${KERNEL_XO}.tapa --enable-buffer-support --connectivity connectivity.ini --max-parallel-synth-jobs 24 --separate-complex-buffer-tasks
 
-runxo: xo
+runxo: ${KERNEL_XO}
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Running HW_EMU (.xo)"
 	@cd ${BUILD_DIR_PREFIX}
 	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XO}
 
-runxodbg: xo
+runxodbg: ${KERNEL_XO}
 	@echo "[MAKE]: Target waveform"
 	@echo "[MAKE]: Running waveform for HW_EMU (.xo)"
 	@cd ${BUILD_DIR_PREFIX}
-	-${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XO} -xosim_work_dir xosim -xosim_save_waveform
-	@head -n -2 xosim/output/run/run_cosim.tcl > xosim/output/run/run_cosim_no_exit.tcl
-	@echo "open_wave_config {wave.wcfg}" >> xosim/output/run/run_cosim_no_exit.tcl
-	vivado -mode gui -source xosim/output/run/run_cosim_no_exit.tcl
+	-${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XO} -xosim_work_dir ${BUILD_DIR_PREFIX}/xosim -xosim_save_waveform
+	@head -n -2 ${BUILD_DIR_PREFIX}/xosim/output/run/run_cosim.tcl > ${BUILD_DIR_PREFIX}/xosim/output/run/run_cosim_no_exit.tcl
+	@echo "open_wave_config {${BUILD_DIR_PREFIX}/wave.wcfg}" >> ${BUILD_DIR_PREFIX}/xosim/output/run/run_cosim_no_exit.tcl
+	vivado -mode gui -source ${BUILD_DIR_PREFIX}/xosim/output/run/run_cosim_no_exit.tcl
 
-runxov: xo
+runxov: ${KERNEL_XO}
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Building .xclbin through Vitis"
 	@cd ${BUILD_DIR_PREFIX}
@@ -88,16 +90,19 @@ runxov: xo
 	--target hw_emu\
   --kernel ${KERNEL_TOP} \
 	--platform ${PLATFORM} \
+	--temp_dir ${VPP_TEMP_DIR} \
+	--log_dir ${VPP_TEMP_DIR}/logs \
+	--report_dir ${VPP_TEMP_DIR}/reports \
 	${KERNEL_XO}
 	@echo "[MAKE]: Running HW_EMU (.xclbin)"
 	@cd ${BUILD_DIR_PREFIX}
 	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XCLBIN_EM}
 
-runxovdbg: xo
+runxovdbg: ${KERNEL_XO}
 	@echo "[MAKE]: Target HW_EMU"
 	@echo "[MAKE]: Building .xclbin through Vitis"
+	export XRT_INI_PATH=${PWD}/scripts/xrt.ini
 	@cd ${BUILD_DIR_PREFIX}
-	export XRT_INI_PATH=scripts/xrt.ini
 	v++ -g \
 	--link \
 	--output "${RUNXOVDBG_OUTPUT_DIR}/${KERNEL_XCLBIN_EM}" \
@@ -105,7 +110,9 @@ runxovdbg: xo
 	--platform ${PLATFORM} \
 	--target hw_emu \
 	--report_level 2 \
-	--temp_dir "${RUNXOVDBG_OUTPUT_DIR}/${KERNEL_TOP}_${PLATFORM}.temp" \
+	--temp_dir ${VPP_TEMP_DIR} \
+	--log_dir ${VPP_TEMP_DIR}/logs \
+	--report_dir ${VPP_TEMP_DIR}/reports \
 	--optimize 3 \
 	--connectivity.nk ${KERNEL_TOP}:1:${KERNEL_TOP} \
 	--save-temps \
@@ -130,14 +137,12 @@ hw: ${KERNEL_XCLBIN_HW}
 
 ${KERNEL_XCLBIN_HW}: xo
 	@echo "[MAKE]: Building HW target"
-	@cd ${BUILD_DIR_PREFIX}
-	source ${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw_generate_bitstream.sh
+	cd ${BUILD_DIR_PREFIX} && source ${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw_generate_bitstream.sh
 
 runhw: ${KERNEL_XCLBIN_HW}
 	@echo "[MAKE]: Target HW"
 	@echo "[MAKE]: Running HW (.xclbin)"
-	@cd ${BUILD_DIR_PREFIX}
-	${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL_XCLBIN_HW}
+	cd ${BUILD_DIR_PREFIX} && ${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL_XCLBIN_HW}
 
 ### CLEAN
 cleanall: clean cleanxo cleandbg cleanhw
