@@ -60,13 +60,16 @@ void task1( tapa::istream<float>& vector_a,
   // Data
   request.c_dn = 0;
   request.req_msg = 0xDEADBEEF;
-  tx_task1_to_sb << request;
-  request.req_msg += 1;
-  tx_task1_to_sb << request;
-  request.req_msg += 1;
-  tx_task1_to_sb << request;
-  request.req_msg += 1;
-  tx_task1_to_sb << request;
+  for(int i = 0; i < 4; i++)
+  {
+    tx_task1_to_sb << request;
+    request.req_msg += 1;
+    //tx_task1_to_sb << request;
+    //request.req_msg += 1;
+    //tx_task1_to_sb << request;
+    //request.req_msg += 1;
+    //tx_task1_to_sb << request;
+  }
 
   // now wait for the response
   rsp = rx_sb_to_task1.read();
@@ -92,21 +95,21 @@ void task2( tapa::istream<float>& vector_b,
   }
   DEBUG_PRINT("[TASK2]: Pushed Vector C\n");
   // READ REQUEST
-  sb_req_t request1 = {0};
-  request1.c_dn = 1;
-  request1.fields.code = SB_REQ_READ_MSGS;
-  request1.fields.npages = 4;
-  request1.fields.pageid = 2;
-  tx_task2_to_sb << request1;
-  // Data
-  sb_rsp_t rsp;
-  // now wait for the response
-  for(uint8_t i = 0; i < 4; i++)
-  {
-    rsp = rx_sb_to_task2.read();
-    DEBUG_PRINT("[TASK2][R]: Msg: %lx\n", (uint64_t)rsp.rsp_msg);
-  }
-  DEBUG_PRINT("[TASK2]: Done\n");
+  //sb_req_t request1 = {0};
+  //request1.c_dn = 1;
+  //request1.fields.code = SB_REQ_READ_MSGS;
+  //request1.fields.npages = 4;
+  //request1.fields.pageid = 2;
+  //tx_task2_to_sb << request1;
+  //// Data
+  //sb_rsp_t rsp;
+  //// now wait for the response
+  //for(uint8_t i = 0; i < 4; i++)
+  //{
+  //  rsp = rx_sb_to_task2.read();
+  //  DEBUG_PRINT("[TASK2][R]: Msg: %lx\n", (uint64_t)rsp.rsp_msg);
+  //}
+  //DEBUG_PRINT("[TASK2]: Done\n");
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -240,76 +243,94 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& rqp_to_ihd_read,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& rqp_to_ohd_write) {
 
-    sb_std_t b_fwd_req, nb_fwd_req[SB_NXCTRS];
-    // Free > Grab > Read > Write
-    for(bool vld_rqr_g, vld_rqr_f, vld_rqr_w[SB_NXCTRS], vld_rqr_r[SB_NXCTRS];;)
+  sb_std_t g_fwd_req, f_fwd_req, nb_fwd_req[SB_NXCTRS], pgm_rsp;
+  // Free > Grab > Read > Write
+  for(bool vld_rqr_g, vld_rqr_f, vld_pgm_sts, vld_rqr_w[SB_NXCTRS], vld_rqr_r[SB_NXCTRS];;)
+  {
+    // blocking forwards
+    f_fwd_req = rqr_to_rqp_free.peek(vld_rqr_f);
+    g_fwd_req = rqr_to_rqp_grab.peek(vld_rqr_g);
+    pgm_rsp = pgm_to_rqp_sts.peek(vld_pgm_sts);
+    if(vld_pgm_sts)
     {
-        // blocking forwards
-        b_fwd_req = rqr_to_rqp_free.peek(vld_rqr_f);
-        if(vld_rqr_f)   // free queue has some message
-        {
-            DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd req --> PGM\n", b_fwd_req.fields.npages);
-            rqp_to_pgm_free << rqr_to_rqp_free.read();
-            // hard wait on pgm:status queue
-            rqp_to_rsg_free << pgm_to_rqp_sts.read();
-            DEBUG_PRINT("[RQP][xctr:%2d][F]: rcv rsp <-- PGM\n", b_fwd_req.fields.npages);
-        }
-        b_fwd_req = rqr_to_rqp_grab.peek(vld_rqr_g);
-        if(vld_rqr_g)   // grab queue has some message
-        {
-            DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd req --> PGM\n", b_fwd_req.fields.npages);
-            rqp_to_pgm_grab << rqr_to_rqp_grab.read();
-            // hard wait on pgm:status queue
-            rqp_to_rsg_grab << pgm_to_rqp_sts.read();
-            DEBUG_PRINT("[RQP][xctr:%2d][G]: rcv rsp <-- PGM\n", b_fwd_req.fields.npages);
-        }
-
-        // WRITE: expecting this to be unrolled and done in parallel with free/grab
-        for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
-        {
-        #pragma HLS unroll
-            nb_fwd_req[xctr] = rqr_to_rqp_write[xctr].peek(vld_rqr_w[xctr]);
-            if(vld_rqr_w[xctr])
-            {
-                rqp_to_rsg_write[xctr] << nb_fwd_req[xctr]; // ctrl pkt for RSG to track
-                // consume ctrl:write message to consume data further
-                nb_fwd_req[xctr] = rqr_to_rqp_write[xctr].read();
-                // get the number of messages in this burst
-                sb_pageid_t msgs = nb_fwd_req[xctr].fields.npages;  // TODO: doesn't look like `msgs` or `nb_fwd_req`  need to be created as an array because it is internal to the loop
-                DEBUG_PRINT("[RQP][xctr:%2d][W]: req.nmsgs:%2d\n", xctr, msgs);
-                rqp_to_ohd_write[xctr] << nb_fwd_req[xctr];
-                sb_std_t data;
-                while(msgs)
-                {
-                    DEBUG_PRINT("[RQP][xctr:%2d][W]: waiting for %d more message(s)\n", xctr, msgs);
-                    data = rqr_to_rqp_write[xctr].read();  // block for write data
-                    // data.c_dn = 0;  // must already be a data packet
-                    rqp_to_ohd_write[xctr] << data;   // data pkts for OHD to track
-                    msgs--;
-                    DEBUG_PRINT("[RQP][xctr:%2d][W]: fwd req --> OHD\n", xctr);
-                }
-                DEBUG_PRINT("[RQP][xctr:%2d][W]: fwd req --> RSG\n", xctr);
-            }
-        }
-
-        // READ: expecting this to be unrolled and done in parallel with free/grab
-        for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
-        {
-        #pragma HLS unroll
-            // non-blocking forwards
-            nb_fwd_req[xctr] = rqr_to_rqp_read[xctr].peek(vld_rqr_r[xctr]);
-            if(vld_rqr_r[xctr])
-            {
-                sb_pageid_t msgs = nb_fwd_req[xctr].fields.npages;  // TODO: doesn't look like `msgs` or `nb_fwd_req`  need to be created as an array because it is internal to the loop
-                DEBUG_PRINT("[RQP][xctr:%2d][R]: req.nmsgs:%2d\n", xctr, msgs);
-                rqp_to_ihd_read[xctr] << nb_fwd_req[xctr];  // for data
-                DEBUG_PRINT("[RQP][xctr:%2d][R]: fwd req --> IHD\n", xctr);
-                rqp_to_rsg_read[xctr] << nb_fwd_req[xctr];  // for RSG to track
-                DEBUG_PRINT("[RQP][xctr:%2d][R]: fwd req --> RSG\n", xctr);
-                nb_fwd_req[xctr] = rqr_to_rqp_read[xctr].read();
-            }
-        }
+      // read code and compare the lower 4 bits to check request type
+      if((pgm_rsp.fields.code & 0xF) == SB_REQ_FREE_PAGE)
+      {
+        DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd rsp --> RSG\n", pgm_rsp.fields.npages);
+        rqp_to_rsg_free << pgm_to_rqp_sts.read();
+      }
+      else if((pgm_rsp.fields.code & 0xF) == SB_REQ_GRAB_PAGE)
+      {
+        DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd rsp --> RSG\n", pgm_rsp.fields.npages);
+        rqp_to_rsg_grab << pgm_to_rqp_sts.read();
+      }
     }
+    else if(vld_rqr_f)   // free queue has some message
+    {
+      DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd req --> PGM\n", f_fwd_req.fields.npages);
+      rqp_to_pgm_free << rqr_to_rqp_free.read();
+      // hard wait on pgm:status queue
+      pgm_rsp = pgm_to_rqp_sts.peek(vld_pgm_sts);
+      // rqp_to_rsg_free << pgm_to_rqp_sts.read();    // hard wait on pgm:status queue
+      DEBUG_PRINT("[RQP][xctr:%2d][F]: rcv rsp <-- PGM\n", f_fwd_req.fields.npages);
+    }
+    else if(vld_rqr_g)   // grab queue has some message
+    {
+      DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd req --> PGM\n", g_fwd_req.fields.npages);
+      rqp_to_pgm_grab << rqr_to_rqp_grab.read();
+      // hard wait on pgm:status queue
+      pgm_rsp = pgm_to_rqp_sts.peek(vld_pgm_sts);
+      // rqp_to_rsg_free << pgm_to_rqp_sts.read();    // hard wait on pgm:status queue
+      DEBUG_PRINT("[RQP][xctr:%2d][G]: rcv rsp <-- PGM\n", g_fwd_req.fields.npages);
+    }
+    else {}
+
+    // WRITE: expecting this to be unrolled and done in parallel with free/grab
+    for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
+    {
+    #pragma HLS unroll
+      nb_fwd_req[xctr] = rqr_to_rqp_write[xctr].peek(vld_rqr_w[xctr]);
+      if(vld_rqr_w[xctr])
+      {
+        rqp_to_rsg_write[xctr] << nb_fwd_req[xctr]; // ctrl pkt for RSG to track
+        // consume ctrl:write message to consume data further
+        nb_fwd_req[xctr] = rqr_to_rqp_write[xctr].read();
+        // get the number of messages in this burst
+        sb_pageid_t msgs = nb_fwd_req[xctr].fields.npages;  // TODO: doesn't look like `msgs` or `nb_fwd_req`  need to be created as an array because it is internal to the loop
+        DEBUG_PRINT("[RQP][xctr:%2d][W]: req.nmsgs:%2d\n", xctr, msgs);
+        rqp_to_ohd_write[xctr] << nb_fwd_req[xctr];
+        sb_std_t data;
+        while(msgs)
+        {
+          DEBUG_PRINT("[RQP][xctr:%2d][W]: waiting for %d more message(s)\n", xctr, msgs);
+          data = rqr_to_rqp_write[xctr].read();  // block for write data
+          // data.c_dn = 0;  // must already be a data packet
+          rqp_to_ohd_write[xctr] << data;   // data pkts for OHD to track
+          msgs--;
+          DEBUG_PRINT("[RQP][xctr:%2d][W]: fwd req --> OHD\n", xctr);
+        }
+        DEBUG_PRINT("[RQP][xctr:%2d][W]: fwd req --> RSG\n", xctr);
+      }
+    }
+
+    // READ: expecting this to be unrolled and done in parallel with free/grab
+    for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
+    {
+    #pragma HLS unroll
+      // non-blocking forwards
+      nb_fwd_req[xctr] = rqr_to_rqp_read[xctr].peek(vld_rqr_r[xctr]);
+      if(vld_rqr_r[xctr])
+      {
+        sb_pageid_t msgs = nb_fwd_req[xctr].fields.npages;  // TODO: doesn't look like `msgs` or `nb_fwd_req`  need to be created as an array because it is internal to the loop
+        DEBUG_PRINT("[RQP][xctr:%2d][R]: req.nmsgs:%2d\n", xctr, msgs);
+        rqp_to_ihd_read[xctr] << nb_fwd_req[xctr];  // for data
+        DEBUG_PRINT("[RQP][xctr:%2d][R]: fwd req --> IHD\n", xctr);
+        rqp_to_rsg_read[xctr] << nb_fwd_req[xctr];  // for RSG to track
+        DEBUG_PRINT("[RQP][xctr:%2d][R]: fwd req --> RSG\n", xctr);
+        nb_fwd_req[xctr] = rqr_to_rqp_read[xctr].read();
+      }
+    }
+  }
 }
 
 /**
@@ -323,35 +344,35 @@ void pgm(tapa::istream<sb_std_t>& rqp_to_pgm_grab,
         tapa::istream<sb_std_t>& rqp_to_pgm_free,
         tapa::ostream<sb_std_t>& pgm_to_rqp_sts) {
 
-    sb_std_t fwd_rsp;
-    for(bool vld_g, vld_f;;)
+  sb_std_t fwd_rsp;
+  for(bool vld_g, vld_f;;)
+  {
+    // handle page deallocation
+    fwd_rsp = rqp_to_pgm_free.peek(vld_f);
+    if(vld_f)
     {
-        // handle page deallocation
-        fwd_rsp = rqp_to_pgm_free.peek(vld_f);
-        if(vld_f)
-        {
-            DEBUG_PRINT("[PGM][xctr:%2d][F]: pageid %d\n", fwd_rsp.fields.npages, fwd_rsp.fields.pageid);
-            sb_std_t rsp;
-            rsp.fields.code = SB_RSP_DONE;
-            pgm_to_rqp_sts << rsp;
-            DEBUG_PRINT("[PGM][xctr:%2d][F]: fwd rsp --> RQP\n", fwd_rsp.fields.npages);
-            rqp_to_pgm_free.read(); // consume the token
-        }
-
-        // handle page allocation
-        fwd_rsp = rqp_to_pgm_grab.peek(vld_g);
-        if(vld_g)
-        {
-            DEBUG_PRINT("[PGM][xctr:%2d][G]: %d page(s)\n", fwd_rsp.fields.npages, fwd_rsp.fields.pageid);
-            sb_std_t rsp;
-            rsp.fields.code = SB_RSP_DONE;
-            // hardcoded to return pageid 2
-            rsp.fields.pageid = 2;
-            pgm_to_rqp_sts << rsp;
-            DEBUG_PRINT("[PGM][xctr:%2d][G]: fwd rsp --> RQP\n", fwd_rsp.fields.npages);
-            rqp_to_pgm_grab.read(); // consume the token
-        }
+      DEBUG_PRINT("[PGM][xctr:%2d][F]: pageid %d\n", fwd_rsp.fields.npages, fwd_rsp.fields.pageid);
+      sb_std_t rsp;
+      rsp.fields.code = SB_RSP_DONE | SB_REQ_FREE_PAGE;
+      pgm_to_rqp_sts << rsp;
+      DEBUG_PRINT("[PGM][xctr:%2d][F]: fwd rsp --> RQP\n", fwd_rsp.fields.npages);
+      rqp_to_pgm_free.read(); // consume the token
     }
+
+    // handle page allocation
+    fwd_rsp = rqp_to_pgm_grab.peek(vld_g);
+    if(vld_g)
+    {
+      DEBUG_PRINT("[PGM][xctr:%2d][G]: %d page(s)\n", fwd_rsp.fields.npages, fwd_rsp.fields.pageid);
+      sb_std_t rsp;
+      rsp.fields.code = SB_RSP_DONE | SB_REQ_GRAB_PAGE;
+      // hardcoded to return pageid 2
+      rsp.fields.pageid = 2;
+      pgm_to_rqp_sts << rsp;
+      DEBUG_PRINT("[PGM][xctr:%2d][G]: fwd rsp --> RQP\n", fwd_rsp.fields.npages);
+      rqp_to_pgm_grab.read(); // consume the token
+    }
+  }
 }
 
 void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
@@ -362,71 +383,71 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
         tapa::istreams<sb_std_t, SB_NXCTRS>& ohd_to_rsg_write,
         tapa::ostreams<sb_rsp_t, SB_NXCTRS>& btxqs) {
 
-    // Free > Grab > Read > Write
-    sb_std_t nb_fwd_rsp, b_fwd_rsp[SB_NXCTRS];
-    sb_rsp_t fwd_rsp[SB_NXCTRS];
-    for(bool vld_rqr_g, vld_rqr_f, vld_rqr_r[SB_NXCTRS], vld_rqr_w[SB_NXCTRS];;)
+  // Free > Grab > Read > Write
+  sb_std_t nb_fwd_rsp, b_fwd_rsp[SB_NXCTRS];
+  sb_rsp_t fwd_rsp[SB_NXCTRS];
+  for(bool vld_rqr_g, vld_rqr_f, vld_rqr_r[SB_NXCTRS], vld_rqr_w[SB_NXCTRS];;)
+  {
+    // non-blocking forwards
+    nb_fwd_rsp = rqp_to_rsg_free.peek(vld_rqr_f);
+    if(vld_rqr_f)   // free queue has some message
     {
-        // non-blocking forwards
-        nb_fwd_rsp = rqp_to_rsg_free.peek(vld_rqr_f);
-        if(vld_rqr_f)   // free queue has some message
-        {
-            sb_portid_t xctr = (sb_portid_t)nb_fwd_rsp.fields.npages;
-            DEBUG_PRINT("[RSG][xctr:%2d][F]: TX response\n", xctr);
-            btxqs[xctr] << std_to_rsp(nb_fwd_rsp);
-            nb_fwd_rsp = rqp_to_rsg_free.read();
-        }
-        nb_fwd_rsp = rqp_to_rsg_grab.peek(vld_rqr_g);
-        if(vld_rqr_g)   // grab queue has some message
-        {
-            sb_portid_t xctr = (sb_portid_t)nb_fwd_rsp.fields.npages;
-            DEBUG_PRINT("[RSG][xctr:%2d][G]: TX response\n", xctr);
-            btxqs[xctr] << std_to_rsp(nb_fwd_rsp);
-            nb_fwd_rsp = rqp_to_rsg_grab.read();
-        }
-
-        // READS
-        for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
-        {
-        #pragma HLS unroll
-            // blocking forwards
-            b_fwd_rsp[xctr] = rqp_to_rsg_read[xctr].peek(vld_rqr_r[xctr]);
-            if(vld_rqr_r[xctr])
-            {
-                // get the number of messages in this burst
-                sb_pageid_t msgs = b_fwd_rsp[xctr].fields.npages;
-                rqp_to_rsg_read[xctr].read();             // consume read ctrl pkt from RQP
-                sb_std_t data;
-                while(msgs--)
-                {
-                    DEBUG_PRINT("[RSG][xctr:%2d][R]: waiting for %d message(s)\n", xctr, msgs+1);
-                    data = ihd_to_rsg_read[xctr].read();  // block for read data pkts from IHD
-                    // data.c_dn = 0;  // must already be a data packet
-                    btxqs[xctr] << std_to_rsp(data);
-                }
-                DEBUG_PRINT("[RSG][xctr:%2d][R]: TX response\n", xctr);
-                // consume the value from the ctrl:read queue
-                b_fwd_rsp[xctr] = rqp_to_rsg_read[xctr].read();
-            }
-        }
-
-        // WRITES
-        for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
-        {
-        #pragma HLS unroll
-            b_fwd_rsp[xctr] = rqp_to_rsg_write[xctr].peek(vld_rqr_w[xctr]);
-            if(vld_rqr_w[xctr])
-            {
-                // need to wait for write response from OHD
-                sb_std_t data;
-                data = ohd_to_rsg_write[xctr].read();  // block for write
-                btxqs[xctr] << std_to_rsp(data);
-                DEBUG_PRINT("[RSG][xctr:%2d][W]: TX response\n", xctr);
-                // consume the value from the ctrl:write queue
-                b_fwd_rsp[xctr] = rqp_to_rsg_write[xctr].read();
-            }
-        }
+      sb_portid_t xctr = (sb_portid_t)nb_fwd_rsp.fields.npages;
+      DEBUG_PRINT("[RSG][xctr:%2d][F]: TX response\n", xctr);
+      btxqs[xctr] << std_to_rsp(nb_fwd_rsp);
+      nb_fwd_rsp = rqp_to_rsg_free.read();
     }
+    nb_fwd_rsp = rqp_to_rsg_grab.peek(vld_rqr_g);
+    if(vld_rqr_g)   // grab queue has some message
+    {
+      sb_portid_t xctr = (sb_portid_t)nb_fwd_rsp.fields.npages;
+      DEBUG_PRINT("[RSG][xctr:%2d][G]: TX response\n", xctr);
+      btxqs[xctr] << std_to_rsp(nb_fwd_rsp);
+      nb_fwd_rsp = rqp_to_rsg_grab.read();
+    }
+
+    // READS
+    for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
+    {
+    #pragma HLS unroll
+      // blocking forwards
+      b_fwd_rsp[xctr] = rqp_to_rsg_read[xctr].peek(vld_rqr_r[xctr]);
+      if(vld_rqr_r[xctr])
+      {
+        // get the number of messages in this burst
+        sb_pageid_t msgs = b_fwd_rsp[xctr].fields.npages;
+        rqp_to_rsg_read[xctr].read();             // consume read ctrl pkt from RQP
+        sb_std_t data;
+        while(msgs--)
+        {
+          DEBUG_PRINT("[RSG][xctr:%2d][R]: waiting for %d message(s)\n", xctr, msgs+1);
+          data = ihd_to_rsg_read[xctr].read();  // block for read data pkts from IHD
+          // data.c_dn = 0;  // must already be a data packet
+          btxqs[xctr] << std_to_rsp(data);
+        }
+        DEBUG_PRINT("[RSG][xctr:%2d][R]: TX response\n", xctr);
+        // consume the value from the ctrl:read queue
+        b_fwd_rsp[xctr] = rqp_to_rsg_read[xctr].read();
+      }
+    }
+
+    // WRITES
+    for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
+    {
+    #pragma HLS unroll
+      b_fwd_rsp[xctr] = rqp_to_rsg_write[xctr].peek(vld_rqr_w[xctr]);
+      if(vld_rqr_w[xctr])
+      {
+        // need to wait for write response from OHD
+        sb_std_t data;
+        data = ohd_to_rsg_write[xctr].read();  // block for write
+        btxqs[xctr] << std_to_rsp(data);
+        DEBUG_PRINT("[RSG][xctr:%2d][W]: TX response\n", xctr);
+        // consume the value from the ctrl:write queue
+        b_fwd_rsp[xctr] = rqp_to_rsg_write[xctr].read();
+      }
+    }
+  }
 }
 
 /**
@@ -440,82 +461,135 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
 */
 void ihd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ihd_read,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& ihd_to_rsg_read,
-        tapa::ibuffers<sb_msg_t[SB_MSGS_PER_PAGE], SB_NUM_PAGES, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>& backend_pages) {
+        tapa::ibuffers<sb_msg_t[SB_MSGS_PER_PAGE], 4, 2, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& backend_pages) {
         //tapa::ostreams<sb_std_t, SB_NXCTRS>& ihd_to_rsg_read) {
 
-    for(bool valid[SB_NXCTRS];;)
+  for(bool valid[SB_NXCTRS];;)
+  {
+    for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++) // for each xctr queue
     {
-        for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++) // for each xctr queue
+    #pragma HLS unroll
+      // parse how many reads the xctr wants on this page
+      sb_std_t req = rqp_to_ihd_read[xctr].peek(valid[xctr]);
+      sb_pageid_t pageid, nmsgs;
+      sb_msg_t msgdata = {0};
+      sb_std_t readrsp = {0};
+      if(valid[xctr] && req.c_dn == 1)
+      {
+        pageid = req.fields.pageid;     // get pageid
+        nmsgs  = req.fields.npages;     // get number of messages to read
+        DEBUG_PRINT("[IHD][xctr:%2d][R]: pageid: %d, nmsgs: %d\n", xctr, pageid, nmsgs); 
+        readrsp.c_dn = 0;               // define control packet
+        // acquire the buffer for this page
+        auto section = backend_pages[pageid].acquire();
+        auto& page_ref = section();
+        while(nmsgs--)
         {
-        #pragma HLS unroll
-            // parse how many reads the xctr wants on this page
-            sb_std_t req = rqp_to_ihd_read[xctr].peek(valid[xctr]);
-            sb_pageid_t pageid, nmsgs;
-            sb_msg_t msgdata = {0};
-            sb_std_t readrsp = {0};
-            if(valid[xctr] && req.c_dn == 1)
-            {
-                pageid = req.fields.pageid;     // get pageid
-                nmsgs  = req.fields.npages;     // get number of messages to read
-                DEBUG_PRINT("[IHD][xctr:%2d][R]: pageid: %d, nmsgs: %d\n", xctr, pageid, nmsgs); 
-                readrsp.c_dn = 0;               // define control packet
-                // acquire the buffer for this page
-                auto section = backend_pages[pageid].acquire();
-                auto& page_ref = section();
-                while(nmsgs--)
-                {
-                    //msgdata = 0xBADCAFFE;//page_ref[nmsgs];  // TODO: add starting index
-                    msgdata = page_ref[nmsgs];  // TODO: add starting index
-                    readrsp.std_msg = msgdata;
-                    ihd_to_rsg_read[xctr] << readrsp;
-                    DEBUG_PRINT("[IHD][xctr:%2d][R]: Sent message: %lx\n", xctr, (uint64_t)msgdata); 
-                }
-                // no explicit response necessary since this is a read
-                rqp_to_ihd_read[xctr].read();
-            }
+          //msgdata = 0xBADCAFFE;//page_ref[nmsgs];  // TODO: add starting index
+          msgdata = page_ref[nmsgs];  // TODO: add starting index
+          readrsp.std_msg = msgdata;
+          ihd_to_rsg_read[xctr] << readrsp;
+          DEBUG_PRINT("[IHD][xctr:%2d][R]: Sent message: %lx\n", xctr, (uint64_t)msgdata); 
         }
+        // no explicit response necessary since this is a read
+        rqp_to_ihd_read[xctr].read();
+      }
     }
+  }
 }
 
 void ohd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ohd_write,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& ohd_to_rsg_write,
-        tapa::obuffers<sb_msg_t[SB_MSGS_PER_PAGE], SB_NUM_PAGES, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>>& backend_pages) {
+        tapa::ostreams<uint64_t, 2>& debugtx, 
+        tapa::obuffers<sb_msg_t[SB_MSGS_PER_PAGE], 4, 2, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& backend_pages) {
         //tapa::ostreams<sb_std_t, SB_NXCTRS>& ohd_to_rsg_write) {
-    for(bool valid[SB_NXCTRS];;)
+
+  
+  bool burst_done[SB_NXCTRS] = {0}, rsp_done[SB_NXCTRS] = {0};
+
+  // init all variables to assume the control phase
+  for(sb_portid_t ixctr = 0; ixctr < SB_NXCTRS; ixctr++)
+  {
+    burst_done[ixctr] = true;
+    rsp_done[ixctr]   = true;
+  }
+
+  sb_msg_t msgdata[SB_NXCTRS] ={0};
+  sb_pageid_t pageid[SB_NXCTRS], nmsgs[SB_NXCTRS], msgs_consumed[SB_NXCTRS];
+  sb_std_t req[SB_NXCTRS], rsp[SB_NXCTRS];
+
+  for(bool valid[SB_NXCTRS];;)
+  {
+#ifndef SKIP_OHD
+    for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++) // for each xctr queue
     {
-        for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++) // for each xctr queue
+    #pragma HLS unroll
+      req[xctr] = rqp_to_ohd_write[xctr].peek(valid[xctr]); // peek the request stream
+
+      if(valid[xctr] && req[xctr].c_dn == 1 && burst_done[xctr] && rsp_done[xctr])  // this must be a new request
+      {
+        // parse how many writes the xctr wants on this page
+        pageid[xctr] = req[xctr].fields.pageid;     // get pageid
+        nmsgs[xctr]  = req[xctr].fields.npages;     // get number of messages to write
+        rsp[xctr] = req[xctr];                      // store the request data in the reponse
+        msgs_consumed[xctr] = 0;                    // set the burst counter to 0
+        burst_done[xctr] = false;                   // burst is pending
+        rsp_done[xctr] = false;                     // response is pending
+        req[xctr] = rqp_to_ohd_write[xctr].read();  // consume the packet
+        debugtx[xctr] << (uint64_t)(0xABCDEFAB);
+        DEBUG_PRINT("[OHD][xctr:%2d][W]: pageid: %d, nmsgs: %d\n", xctr, pageid[xctr], nmsgs[xctr]);
+      }
+      else if(valid[xctr] && req[xctr].c_dn == 0 && !(burst_done[xctr])) // this must be the data packet for the last request
+      {
+        msgdata[xctr] = req[xctr].std_msg;          // extract the message
+        debugtx[xctr] << msgdata[xctr];             // debug stuff
+
+        // acquire the buffer for this page
+        //auto section = backend_pages[pageid[xctr]].acquire();
+        //auto& page_ref = section();
+        // write it in the buffer
+        //page_ref[nmsgs[xctr]] = msgdata[xctr];    // TODO: add starting index
+
+        req[xctr] = rqp_to_ohd_write[xctr].read();  // consume the packet
+        msgs_consumed[xctr]++;                      // increment msg counter
+        DEBUG_PRINT("[OHD][xctr:%2d][W]: Digested message: %lx\n", xctr, (uint64_t)msgdata[xctr]); 
+        if(msgs_consumed[xctr] == nmsgs[xctr])
         {
-        #pragma HLS unroll
-            // parse how many writes the xctr wants on this page
-            sb_std_t req = rqp_to_ohd_write[xctr].peek(valid[xctr]);
-            sb_std_t req_intrmd;
-            sb_pageid_t pageid, nmsgs;
-            sb_msg_t msgdata ={0};
-            if(valid[xctr] && req.c_dn == 1)
-            {
-                // consume control packet
-                req = rqp_to_ohd_write[xctr].read();
-                pageid = req.fields.pageid;     // get pageid
-                nmsgs  = req.fields.npages;     // get number of messages to write
-                DEBUG_PRINT("[OHD][xctr:%2d][W]: pageid: %d, nmsgs: %d\n", xctr, pageid, nmsgs); 
-                // acquire the buffer for this page
-                auto section = backend_pages[pageid].acquire();
-                auto& page_ref = section();
-                while(nmsgs--)
-                {
-                    // extract the message
-                    req_intrmd = rqp_to_ohd_write[xctr].read();
-                    msgdata = req_intrmd.std_msg;
-                    DEBUG_PRINT("[OHD][xctr:%2d][W]: Digested message: %lx\n", xctr, (uint64_t)msgdata); 
-                    // write it in the buffer
-                    page_ref[nmsgs] = msgdata;  // TODO: add starting index
-                }
-                // use the previous request to make the response packet
-                req.fields.code = SB_RSP_DONE;
-                ohd_to_rsg_write[xctr] << req;
-            }
+          burst_done[xctr] = true;                  // mark burst as done
+          debugtx[xctr] << msgs_consumed[xctr];
         }
+      }
+      else if(burst_done[xctr] && !rsp_done[xctr])  // generate the response now
+      { 
+        DEBUG_PRINT("[OHD][xctr:%2d][W]: fwd rsp --> RSG\n", xctr); 
+        rsp[xctr].fields.code = SB_RSP_DONE;        // set code
+        ohd_to_rsg_write[xctr] << rsp[xctr];        // send response
+        rsp_done[xctr] = true;                      // mark response as done
+      }
+      else {}
     }
+#else
+  
+
+#endif  // SKIP_OHD
+  }
+  
+}
+
+void debug_task(tapa::istreams<uint64_t, SB_NXCTRS>& debugstreams)
+{
+  uint64_t msg[SB_NXCTRS] = {0};
+  for(bool valid[SB_NXCTRS];;)
+  {
+    for (int i = 0; i < SB_NXCTRS; i++)
+    {
+      msg[i] = debugstreams[i].peek(valid[i]);
+      if(valid[i])
+      {
+        debugstreams[i].read();
+      }
+    }
+  }
 }
 
 
@@ -527,11 +601,12 @@ void ohd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ohd_write,
 void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
              tapa::ostreams<sb_rsp_t, SB_NXCTRS>& sb_txqs)
 {
+  tapa::streams<uint64_t, SB_NXCTRS> debugstreams("debug_streams");
   // RQR  <--->  RQP
   tapa::stream<sb_std_t> rqr_to_rqp_grab("rqr_to_rqp_grab");
   tapa::stream<sb_std_t> rqr_to_rqp_free("rqr_to_rqp_free");
   tapa::streams<sb_std_t, SB_NXCTRS> rqr_to_rqp_read("rqr_to_rqp_read");
-  tapa::streams<sb_std_t, SB_NXCTRS> rqr_to_rqp_write("rqr_to_rqp_write");
+  tapa::streams<sb_std_t, SB_NXCTRS, 8> rqr_to_rqp_write("rqr_to_rqp_write");
   // RQP  <--->  PGM
   tapa::stream<sb_std_t> rqp_to_pgm_grab("rqp_to_pgm_grab");
   tapa::stream<sb_std_t> rqp_to_pgm_free("rqp_to_pgm_free");
@@ -548,7 +623,7 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
   // RQP  <--->  IHD
   tapa::streams<sb_std_t, SB_NXCTRS> rqp_to_ihd_read("rqp_to_ihd_read");
   // RQP  <--->  OHD
-  tapa::streams<sb_std_t, SB_NXCTRS> rqp_to_ohd_write("rqp_to_ohd_write");
+  tapa::streams<sb_std_t, SB_NXCTRS, 8> rqp_to_ohd_write("rqp_to_ohd_write");
   // IHD  <--->  RSG
   tapa::streams<sb_std_t, SB_NXCTRS> ihd_to_rsg_read("ihd_to_rsg_read");
   // IHD  <--->  RSG
@@ -558,7 +633,7 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
 
   // actual buffers
   // buffercore_t backend_pages;
-  tapa::buffers<sb_msg_t[SB_MSGS_PER_PAGE], SB_NUM_PAGES, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::uram>> backend_pages;
+  tapa::buffers<sb_msg_t[SB_MSGS_PER_PAGE], 4, 2, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> backend_pages;
 
   tapa::task()
     // .invoke<tapa::detach>(rx_arbiter, (*brxqs_p), (*arbit_rxq_p))
@@ -567,6 +642,8 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
     //                      sb_rxqs,
     //                      sb_txqs
     //                      );
+    .invoke<tapa::detach>(debug_task,
+            debugstreams)
     .invoke<tapa::detach>(rqr,
             sb_rxqs,
             rqr_to_rqp_grab,
@@ -607,6 +684,7 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
     .invoke<tapa::detach>(ohd,
             rqp_to_ohd_write,
             ohd_to_rsg_write,
+            debugstreams,
             backend_pages);
             //ohd_to_rsg_write);
 }
@@ -626,8 +704,8 @@ void VecAdd(tapa::mmap<const float> vector_a,
   tapa::stream<float> task1_to_task2_pageinfo ("task1_to_task2_pageinfo");
   std::cout << "===" << std::endl;
 
-  tapa::streams<sb_req_t, SB_NXCTRS> sb_rxqs("sb_rxqs");
-  tapa::streams<sb_rsp_t, SB_NXCTRS> sb_txqs("sb_txqs");
+  tapa::streams<sb_req_t, SB_NXCTRS, 8> sb_rxqs("sb_rxqs");
+  tapa::streams<sb_rsp_t, SB_NXCTRS, 8> sb_txqs("sb_txqs");
   
   tapa::task()
     .invoke(Mmap2Stream, vector_a, a_q)

@@ -12,11 +12,11 @@
 #define SB_NRX    (SB_NXCTRS)
 #define SB_NTX    (SB_NXCTRS)
 
-#define SB_NUM_PAGES        (64)
+#define SB_NUM_PAGES        (4)
 #define SB_WORD_SIZE        (4)
 #define SB_WORD_SIZE_BITS   (32)    // TODO: SBIF_WORD_SIZE << 3
 #define SB_PAGE_SIZE        (1024)
-#define SB_MSGS_PER_PAGE    (256)   // TODO: SB_PAGE_SIZE/SB_WORD_SIZE
+#define SB_MSGS_PER_PAGE    (8)   // TODO: SB_PAGE_SIZE/SB_WORD_SIZE
 
 using sb_portid_t     = uint8_t;
 using sb_pageid_t     = uint16_t;
@@ -28,15 +28,15 @@ using sb_msg_t        = uint64_t;
 #define SB_REQ_GRAB_PAGE  (0x4)
 #define SB_REQ_FREE_PAGE  (0x8)
 
-#define SB_RSP_DONE   (0x1)
-#define SB_RSP_WAIT   (0x2)
-#define SB_RSP_FAIL   (0x4)
+#define SB_RSP_DONE   (0x1<<4)
+#define SB_RSP_WAIT   (0x2<<4)
+#define SB_RSP_FAIL   (0x4<<4)
 
 /**
  * Standard Request Type:
  * 
  *  <-----------------------sb_msg_t---------------------->
- * |           |  1   |      8     |      8      |    8    |
+ * |           |  1   |      8     |      16     |    16   |
  *  <-padding-> <c_dn> <-req_code-> <-num_pages-> <-pg_idx->
  * 
 */
@@ -56,7 +56,7 @@ typedef struct {
  * Standard Response Type:
  * 
  *  <-----------------------sb_msg_t---------------------->
- * |           |  1   |      8     |      8      |    8    |
+ * |           |  1   |      8     |     16     |    16   |
  *  <-padding-> <c_dn> <-req_code-> <-num_pages-> <-pg_idx->
  * 
 */
@@ -116,8 +116,8 @@ typedef struct
   sb_pageid_t pageid;
 }sb_metadata_t;
 
-sb_metadata_t metadata_t[SB_NUM_PAGES] = {0};
-bool valid_pages[8][(SB_NUM_PAGES>>3)] = {0};
+//sb_metadata_t metadata_t[SB_NUM_PAGES] = {0};
+//bool valid_pages[8][(SB_NUM_PAGES>>3)] = {0};
 
 // used to set pageids in metadata when that page is requested for the first time
 sb_pageid_t pageid_init_counter = 0;
