@@ -32,19 +32,12 @@ using sb_msg_t        = uint64_t;
 #define SB_RSP_WAIT   (0x2<<4)
 #define SB_RSP_FAIL   (0x4<<4)
 
-/**
- * Standard Request Type:
- * 
- *  <-----------------------sb_msg_t---------------------->
- * |           |  1   |      8     |      16     |    16   |
- *  <-padding-> <c_dn> <-req_code-> <-num_pages-> <-pg_idx->
- * 
-*/
 typedef struct {
   union{
     struct{
       sb_pageid_t pageid;
-      sb_pageid_t npages;
+      sb_pageid_t index;
+      uint8_t     length;
       uint8_t     code;
     }fields;
     sb_msg_t req_msg;
@@ -52,19 +45,12 @@ typedef struct {
   bool c_dn;
 }sb_req_t;
 
-/**
- * Standard Response Type:
- * 
- *  <-----------------------sb_msg_t---------------------->
- * |           |  1   |      8     |     16     |    16   |
- *  <-padding-> <c_dn> <-req_code-> <-num_pages-> <-pg_idx->
- * 
-*/
 typedef struct {
   union{
     struct{
       sb_pageid_t pageid;
-      sb_pageid_t npages;
+      sb_pageid_t index;
+      uint8_t     length;
       uint8_t     code;
     }fields;
     sb_msg_t rsp_msg;
@@ -73,11 +59,22 @@ typedef struct {
 }sb_rsp_t;
 
 
+/**
+ * Standard Message Type:
+ * 
+ *  <------------------sb_std_t------------------>
+ *         <---------------sb_msg_t-------------->
+ * 
+ * |  1   | 16  |  8   |   8    |   16  |   16   |
+ *  <c_dn> <pad> <code> <length> <index> <pageid>
+ * 
+*/
 typedef struct {
   union{
     struct{
       sb_pageid_t pageid;
-      sb_pageid_t npages;
+      sb_pageid_t index;
+      uint8_t     length;
       uint8_t     code;
     }fields;
     sb_msg_t std_msg;
@@ -88,11 +85,11 @@ typedef struct {
 /**
  * For Grab requests:
  *  number of pages requested should be sent in `pageid` field
- *  `npages` field is being used to share index of xctr.
+ *  `index` field is being used to share index of xctr.
  *
  * For Free requests:
  *  index of page to be freed should be shared in `pageid` field.
- *  `npages` field is being used to share index of xctr.
+ *  `index` field is being used to share index of xctr.
  *
  * For Read/Writes:
  *  fields reserve their intent of usage.
