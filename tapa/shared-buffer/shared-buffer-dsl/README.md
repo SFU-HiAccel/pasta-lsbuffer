@@ -41,8 +41,8 @@ Generates the response for all xctrs on sb\_txqs.
 * [x] Loopback
 * [x] Flow and Connectivity
 * [x] Multiple XCTRs
-* [ ] Buffers
-* [ ] Establish shared buffering on hardcoded page
+* [x] Buffers
+* [x] Establish shared buffering on hardcoded page
 
 ## Beta
 
