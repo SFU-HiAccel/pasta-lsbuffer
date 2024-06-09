@@ -95,21 +95,21 @@ void task2( tapa::istream<float>& vector_b,
   }
   DEBUG_PRINT("[TASK2]: Pushed Vector C\n");
   // READ REQUEST
-  //sb_req_t request1 = {0};
-  //request1.c_dn = 1;
-  //request1.fields.code = SB_REQ_READ_MSGS;
-  //request1.fields.npages = 4;
-  //request1.fields.pageid = 2;
-  //tx_task2_to_sb << request1;
-  //// Data
-  //sb_rsp_t rsp;
-  //// now wait for the response
-  //for(uint8_t i = 0; i < 4; i++)
-  //{
-  //  rsp = rx_sb_to_task2.read();
-  //  DEBUG_PRINT("[TASK2][R]: Msg: %lx\n", (uint64_t)rsp.rsp_msg);
-  //}
-  //DEBUG_PRINT("[TASK2]: Done\n");
+  sb_req_t request1 = {0};
+  request1.c_dn = 1;
+  request1.fields.code = SB_REQ_READ_MSGS;
+  request1.fields.npages = 4;
+  request1.fields.pageid = 2;
+  tx_task2_to_sb << request1;
+  // Data
+  sb_rsp_t rsp;
+  // now wait for the response
+  for(uint8_t i = 0; i < 4; i++)
+  {
+    rsp = rx_sb_to_task2.read();
+    DEBUG_PRINT("[TASK2][R]: Msg: %lx\n", (uint64_t)rsp.rsp_msg);
+  }
+  DEBUG_PRINT("[TASK2]: Done\n");
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -541,23 +541,24 @@ void ohd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ohd_write,
       }
       else if(valid[xctr] && req[xctr].c_dn == 0 && !(burst_done[xctr])) // this must be the data packet for the last request
       {
-        msgdata[xctr] = req[xctr].std_msg;          // extract the message
-        debugtx[xctr] << msgdata[xctr];             // debug stuff
+        //debugtx[xctr] << msgdata[xctr];           // debug stuff
 
         // acquire the buffer for this page
-        //auto section = backend_pages[pageid[xctr]].acquire();
-        //auto& page_ref = section();
-        // write it in the buffer
-        //page_ref[nmsgs[xctr]] = msgdata[xctr];    // TODO: add starting index
-
-        req[xctr] = rqp_to_ohd_write[xctr].read();  // consume the packet
-        msgs_consumed[xctr]++;                      // increment msg counter
-        DEBUG_PRINT("[OHD][xctr:%2d][W]: Digested message: %lx\n", xctr, (uint64_t)msgdata[xctr]); 
-        if(msgs_consumed[xctr] == nmsgs[xctr])
+        for(uint8_t dummy = 0; dummy < 1; dummy++)
         {
-          burst_done[xctr] = true;                  // mark burst as done
-          debugtx[xctr] << msgs_consumed[xctr];
+          auto section = backend_pages[pageid[xctr]].acquire();
+          auto& page_ref = section();
+          for (msgs_consumed[xctr] = 0; msgs_consumed[xctr] < nmsgs[xctr]; msgs_consumed[xctr]++)
+          {
+            req[xctr] = rqp_to_ohd_write[xctr].read();  // consume the packet
+            msgdata[xctr] = req[xctr].std_msg;          // extract the message
+            debugtx[xctr] << msgs_consumed[xctr];
+            // write it in the buffer
+            page_ref[nmsgs[xctr]] = msgdata[xctr];      // TODO: add starting index          
+          }
         }
+        burst_done[xctr] = true;                    // mark burst as done
+        DEBUG_PRINT("[OHD][xctr:%2d][W]: Digested message: %lx\n", xctr, (uint64_t)msgdata[xctr]); 
       }
       else if(burst_done[xctr] && !rsp_done[xctr])  // generate the response now
       { 
