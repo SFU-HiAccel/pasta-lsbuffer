@@ -169,14 +169,14 @@ void rqr(tapa::istreams<sb_req_t, SB_NXCTRS>& brxqs,
       std_req[xctr] = req_to_std(req[xctr]);
       if(fwd_rqp_free[xctr])        // force write into the free queue
       {
-        std_req[xctr].fields.length = (sb_pageid_t)xctr;
+        std_req[xctr].fields.index = (sb_pageid_t)xctr;   // write xctr index into the index field
         rqr_to_rqp_free         << std_req[xctr];
         brxqs[xctr].read();
         DEBUG_PRINT("[RQR][xctr:%2d][F]: RX request\n", xctr);
       }
       else if(fwd_rqp_grab[xctr])   // force write into the grab queue
       {
-        std_req[xctr].fields.length = (sb_pageid_t)xctr;
+        std_req[xctr].fields.index = (sb_pageid_t)xctr;   // write xctr index into the index field
         rqr_to_rqp_grab         << std_req[xctr];
         brxqs[xctr].read();
         DEBUG_PRINT("[RQR][xctr:%2d][G]: RX request\n", xctr);
@@ -256,32 +256,32 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
       // read code and compare the lower 4 bits to check request type
       if((pgm_rsp.fields.code & 0xF) == SB_REQ_FREE_PAGE)
       {
-        DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd rsp --> RSG\n", pgm_rsp.fields.length);
+        DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd rsp --> RSG\n", pgm_rsp.fields.index);
         rqp_to_rsg_free << pgm_to_rqp_sts.read();
       }
       else if((pgm_rsp.fields.code & 0xF) == SB_REQ_GRAB_PAGE)
       {
-        DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd rsp --> RSG\n", pgm_rsp.fields.length);
+        DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd rsp --> RSG\n", pgm_rsp.fields.index);
         rqp_to_rsg_grab << pgm_to_rqp_sts.read();
       }
     }
     else if(vld_rqr_f)   // free queue has some message
     {
-      DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd req --> PGM\n", f_fwd_req.fields.length);
+      DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd req --> PGM\n", f_fwd_req.fields.index);
       rqp_to_pgm_free << rqr_to_rqp_free.read();
       // hard wait on pgm:status queue
       pgm_rsp = pgm_to_rqp_sts.peek(vld_pgm_sts);
       // rqp_to_rsg_free << pgm_to_rqp_sts.read();    // hard wait on pgm:status queue
-      DEBUG_PRINT("[RQP][xctr:%2d][F]: rcv rsp <-- PGM\n", f_fwd_req.fields.length);
+      DEBUG_PRINT("[RQP][xctr:%2d][F]: rcv rsp <-- PGM\n", f_fwd_req.fields.index);
     }
     else if(vld_rqr_g)   // grab queue has some message
     {
-      DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd req --> PGM\n", g_fwd_req.fields.length);
+      DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd req --> PGM\n", g_fwd_req.fields.index);
       rqp_to_pgm_grab << rqr_to_rqp_grab.read();
       // hard wait on pgm:status queue
       pgm_rsp = pgm_to_rqp_sts.peek(vld_pgm_sts);
       // rqp_to_rsg_free << pgm_to_rqp_sts.read();    // hard wait on pgm:status queue
-      DEBUG_PRINT("[RQP][xctr:%2d][G]: rcv rsp <-- PGM\n", g_fwd_req.fields.length);
+      DEBUG_PRINT("[RQP][xctr:%2d][G]: rcv rsp <-- PGM\n", g_fwd_req.fields.index);
     }
     else {}
 
@@ -333,6 +333,16 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
   }
 }
 
+
+// Function to find the index of the first 0 bit in a number
+inline uint8_t find_first_zero_bit_index(uint8_t num) {
+  for (uint8_t i = 0; i < 8; i++) {
+    if (!(num & (1 << i))) {
+      return i;
+    }
+  }
+}
+
 /**
  * Task     : Page Manager
  * Purpose  : The page-manager is responsible for maintaining all information
@@ -344,34 +354,90 @@ void pgm(tapa::istream<sb_std_t>& rqp_to_pgm_grab,
         tapa::istream<sb_std_t>& rqp_to_pgm_free,
         tapa::ostream<sb_std_t>& pgm_to_rqp_sts) {
 
-  sb_std_t fwd_rsp;
+  // sb_metadata_t metadata[SB_NUM_PAGES] = {0};
+  uint8_t valid[SB_NUM_PAGES>>3] = {0};
+
+  // sb_metadata_t free_md, grab_md;
+  sb_pageid_t free_vld8_pre, free_vld8_new, free_pageid_in8;
+  sb_pageid_t grab_vld8_pre, grab_vld8_new, grab_pageid_in8, grab_avl_idx;
+  bool grab_avl;
+  sb_std_t fwd_rsp_f, fwd_rsp_g, rsp;
+  sb_pageid_t grab_pageid;
+  sb_pageid_t free_pageid;
+
+  // initialise lookup array
+  uint8_t avl_page_lut[255] = {0};
+  for (uint16_t i = 0; i < 255; i++)
+  {
+    avl_page_lut[i] = find_first_zero_bit_index(i);
+  }
+
   for(bool vld_g, vld_f;;)
   {
-    // handle page deallocation
-    fwd_rsp = rqp_to_pgm_free.peek(vld_f);
-    if(vld_f)
+    // clear existing response
+    rsp.c_dn = 1;
+    rsp.std_msg = 0;
+    fwd_rsp_f = rqp_to_pgm_free.peek(vld_f);
+    fwd_rsp_g = rqp_to_pgm_grab.peek(vld_g);
+    if(vld_f)       // handle page deallocation
     {
-      DEBUG_PRINT("[PGM][xctr:%2d][F]: pageid %d\n", fwd_rsp.fields.length, fwd_rsp.fields.pageid);
-      sb_std_t rsp;
+      DEBUG_PRINT("[PGM][xctr:%2d][F]: pageid %d\n", fwd_rsp_f.fields.index, fwd_rsp_f.fields.pageid);
+      
+      // update page info
+      free_pageid     = fwd_rsp_f.fields.pageid;                      // get the pageid
+      free_vld8_pre   = valid[free_pageid>>3];                      // get the 8-bit valid byte
+      free_pageid_in8 = free_pageid & 0x7;                          // get the 3LSBs from `pageid`
+      free_vld8_new   = free_vld8_pre & ~(1 << free_pageid_in8);    // unset this specific bit
+      valid[free_pageid>>3] = free_vld8_new;
+
+      // send response
       rsp.fields.code = SB_RSP_DONE | SB_REQ_FREE_PAGE;
       pgm_to_rqp_sts << rsp;
-      DEBUG_PRINT("[PGM][xctr:%2d][F]: fwd rsp --> RQP\n", fwd_rsp.fields.length);
+
       rqp_to_pgm_free.read(); // consume the token
+
+      DEBUG_PRINT("[PGM][xctr:%2d][F]: fwd rsp --> RQP\n", fwd_rsp_f.fields.index);
     }
 
-    // handle page allocation
-    fwd_rsp = rqp_to_pgm_grab.peek(vld_g);
-    if(vld_g)
+    else if(vld_g)  // handle page allocation
     {
-      DEBUG_PRINT("[PGM][xctr:%2d][G]: %d page(s)\n", fwd_rsp.fields.length, fwd_rsp.fields.pageid);
-      sb_std_t rsp;
-      rsp.fields.code = SB_RSP_DONE | SB_REQ_GRAB_PAGE;
-      // hardcoded to return pageid 2
-      rsp.fields.pageid = 2;
+      DEBUG_PRINT("[PGM][xctr:%2d][G]: %d page(s)\n", fwd_rsp_g.fields.index, fwd_rsp_g.fields.pageid);
+
+      grab_avl = false;
+      // loop around all bytes and find the available index
+      PGM_G_BIN_SEARCH: for(sb_pageid_t i = 0; i < (SB_NUM_PAGES>>3); i++) {
+        if(valid[i] != 0xFF) {
+          grab_avl_idx = i;
+          grab_avl = true;
+          break;
+        }
+      }
+      if(grab_avl)
+      {
+        // update page info
+        grab_vld8_pre   = valid[grab_avl_idx];                        // get the 8-bit valid byte
+        grab_pageid_in8 = avl_page_lut[grab_vld8_pre];                // find a page which is keeping the bin empty
+        grab_vld8_new   = grab_vld8_pre & ~(1 << grab_pageid_in8);    // unset this specific bit
+        valid[free_pageid>>3] = free_vld8_new;
+
+        grab_pageid     = (grab_avl_idx << 3) | grab_pageid_in8;      // form the pageid
+        rsp.fields.code = SB_RSP_DONE | SB_REQ_GRAB_PAGE;
+        rsp.fields.pageid = grab_pageid;
+      }
+      else
+      {
+        // generate the response
+        rsp.fields.code = SB_RSP_FAIL | SB_REQ_GRAB_PAGE;
+        // hardcoded to return pageid 2
+        rsp.fields.pageid = 0xFFFF;
+      }
+
       pgm_to_rqp_sts << rsp;
-      DEBUG_PRINT("[PGM][xctr:%2d][G]: fwd rsp --> RQP\n", fwd_rsp.fields.length);
       rqp_to_pgm_grab.read(); // consume the token
+
+      DEBUG_PRINT("[PGM][xctr:%2d][G]: fwd rsp --> RQP\n", fwd_rsp_g.fields.index);
     }
+    else {}
   }
 }
 
