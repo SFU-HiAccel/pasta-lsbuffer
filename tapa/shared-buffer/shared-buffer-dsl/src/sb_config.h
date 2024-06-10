@@ -12,7 +12,7 @@
 #define SB_NRX    (SB_NXCTRS)
 #define SB_NTX    (SB_NXCTRS)
 
-#define SB_NUM_PAGES        (4)
+#define SB_NUM_PAGES        (8)
 #define SB_WORD_SIZE        (4)
 #define SB_WORD_SIZE_BITS   (32)    // TODO: SBIF_WORD_SIZE << 3
 #define SB_PAGE_SIZE        (1024)
@@ -106,15 +106,16 @@ typedef struct {
 */
 typedef struct
 {
+  // The header is supposed to contain all metadata for a specific page index.
+  // This is supposed to be stored in a CAM structure, so that the address
+  // is the page index for which the metadata is stored.
+  // This makes the metadata structure less resource hungry.
   union{
-    uint8_t valid : 1;
-    uint8_t pad   : 7;
+    bool    valid   : 1;
+    bool    pad     : 1;
   }header;
-  sb_pageid_t pageid;
+  sb_portid_t xctr;
 }sb_metadata_t;
-
-//sb_metadata_t metadata_t[SB_NUM_PAGES] = {0};
-//bool valid_pages[8][(SB_NUM_PAGES>>3)] = {0};
 
 // used to set pageids in metadata when that page is requested for the first time
 sb_pageid_t pageid_init_counter = 0;
@@ -137,5 +138,5 @@ using btxq_t   = tapa::stream<sb_rsp_t>;
 // brxq_t* arbit_rxq_p;// = nullptr;
 // btxq_t* arbit_txq_p;// = nullptr;
 
-
 #endif // __SB_CONFIG_H__
+
