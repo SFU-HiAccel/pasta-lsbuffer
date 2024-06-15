@@ -118,6 +118,9 @@ class obuffer : public virtual internal::basic_buffer<T, n_sections> {
  public:
   using section_t = section<T, n_sections, dims...>;
   section_t acquire() { return section_t(*this, true); }
+#ifdef TAPA_BUFFER_EXPLICIT_RELEASE
+  void release() { section_t(*this, true).release_section(); }
+#endif
 };
 
 /// Provides consumer-side access to a @c tapa::buffer object where it is used
@@ -150,6 +153,9 @@ class ibuffer : public virtual internal::basic_buffer<T, n_sections> {
  public:
   using section_t = section<T, n_sections, dims...>;
   section_t acquire() { return section_t(*this, false); }
+#ifdef TAPA_BUFFER_EXPLICIT_RELEASE
+  void release() { section_t(*this, false).release_section(); }
+#endif
 };
 
 // diamond inheritance so that `buffer&` can be cast to `ibuffer&` and
@@ -186,6 +192,7 @@ class section {
   T& operator()() { return data.inner_data->ptr[section_id]; }
   const T& operator()() const { return data.inner_data->ptr[section_id]; }
 
+#ifndef TAPA_BUFFER_EXPLICIT_RELEASE
   ~section() {
     if (for_producer) {
       data.inner_data->occupied_sections.write(section_id);
@@ -193,6 +200,15 @@ class section {
       data.inner_data->free_sections.write(section_id);
     }
   }
+#else
+  void release_section() {
+    if (for_producer) {
+      data.inner_data->occupied_sections.write(section_id);
+    } else {
+      data.inner_data->free_sections.write(section_id);
+    }
+  }
+#endif
 
  private:
   using buffer_t = internal::basic_buffer<T, n_sections>;
