@@ -30,10 +30,13 @@ void vadd(tapa::istream<float>& a,
   }
 }
 
-void task1( tapa::istream<float>& vector_a,
-            tapa::ostream<sb_req_t>& tx_task1_to_sb,
-            tapa::istream<sb_rsp_t>& rx_sb_to_task1,
-            tapa::ostream<float>& tx_task1_to_task2)
+void task1( tapa::istream<float>& vector_a1,
+            tapa::istream<float>& vector_a2,
+            tapa::ostream<float>& vector_a0,
+            tapa::ostream<sb_req_t>& tx_sb,
+            tapa::istream<sb_rsp_t>& rx_sb,
+            tapa::ostream<sb_pageid_t>& tx_task2,
+            tapa::istream<sb_pageid_t>& rx_task3)
 {
 
   // GRAB REQUEST
@@ -41,75 +44,125 @@ void task1( tapa::istream<float>& vector_a,
   request.c_dn = 1;
   request.fields.code = SB_REQ_GRAB_PAGE;
   request.fields.pageid = 1;  // number of pages to allocate
-  tx_task1_to_sb << request;
+  tx_sb << request;
 
   // now wait for the response to be received
   sb_rsp_t rsp;
-  rsp = rx_sb_to_task1.read();
+  rsp = rx_sb.read();
   DEBUG_PRINT("[TASK1][G]: Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
   sb_pageid_t task1_page = rsp.fields.pageid;
+
+  // we have the page above //
 
   // WRITE_REQUEST
   request = {0};
   request.c_dn = 1;
   request.fields.code = SB_REQ_WRITE_MSGS;
-  request.fields.length = 4;
+  request.fields.index = 0;     // start from index 0
+  request.fields.length = N;    // N messages to write
   request.fields.pageid = task1_page;
   DEBUG_PRINT("[TASK1][W]: Sending request: %lx\n", (uint64_t)request.req_msg);
-  tx_task1_to_sb << request;
+  tx_sb << request;
   // Data
   request.c_dn = 0;
-  request.req_msg = 0xDEADBEEF;
-  for(int i = 0; i < 4; i++)
+  for(int i = 0; i < N; i++)
   {
-    tx_task1_to_sb << request;
-    request.req_msg += 1;
-    //tx_task1_to_sb << request;
-    //request.req_msg += 1;
-    //tx_task1_to_sb << request;
-    //request.req_msg += 1;
-    //tx_task1_to_sb << request;
+    request.req_msg = (vector_a1.read() + vector_a2.read());
+    tx_sb << request;
   }
 
   // now wait for the response
-  rsp = rx_sb_to_task1.read();
+  rsp = rx_sb.read();
   DEBUG_PRINT("[TASK1][W]: %lu %lu\n", (uint64_t)rsp.fields.code, (uint64_t)rsp.fields.pageid);
   
-  for (uint64_t i = 0; i < N; ++i)
-  {
-    tx_task1_to_task2 << vector_a.read();
-  }
+  // send the pageid (pointer) to task2
+  tx_task2 << task1_page;
+
+  // wait for task3 to mark done
+  task1_page = rx_task3.read();
+  
+  // FREE REQUEST
+  request = {0};
+  request.c_dn = 1;
+  request.fields.code = SB_REQ_FREE_PAGE;
+  request.fields.pageid = task1_page;  // this page to be freed
+  tx_sb << request;
+
+  // now wait for the response to be received
+  rsp;
+  rsp = rx_sb.read();
+  DEBUG_PRINT("[TASK1][F]: Free: Rsp: %lu\n", (uint64_t)rsp.fields.code);
 }
 
-void task2( tapa::istream<float>& vector_b,
-            tapa::ostream<float>& vector_c,
-            tapa::ostream<sb_req_t>& tx_task2_to_sb,
-            tapa::istream<sb_rsp_t>& rx_sb_to_task2,
-            tapa::istream<float>& rx_task1_to_task2)
+void task2( tapa::istream<float>& vector_b1,
+            tapa::istream<float>& vector_a0,
+            tapa::ostream<float>& vector_b0,
+            tapa::ostream<sb_req_t>& tx_sb,
+            tapa::istream<sb_rsp_t>& rx_sb,
+            tapa::istream<sb_pageid_t>& rx_task1,
+            tapa::ostream<sb_pageid_t>& tx_task3)
 {
-  for (uint64_t i = 0; i < N; ++i)
-  {
-    // vector_c << (float)(0);
-    vector_c << vector_b.read() + rx_task1_to_task2.read();
-    // printf("%f %f\n", vector_b.read() + rx_task1_to_task2.read());
-  }
-  DEBUG_PRINT("[TASK2]: Pushed Vector C\n");
-  // READ REQUEST
+
+  // hard wait for task1 to send page ID
+  sb_pageid_t pageid = rx_task1.read();
+
+  // Create the Read Request on this page
   sb_req_t request1 = {0};
   request1.c_dn = 1;
   request1.fields.code = SB_REQ_READ_MSGS;
-  request1.fields.length = 4;
-  request1.fields.pageid = 0;
-  tx_task2_to_sb << request1;
+  request1.fields.index = 0;    // start from index 0
+  request1.fields.length = N;   // need to receive N elements
+  request1.fields.pageid = pageid;
+  tx_sb << request1;
+  DEBUG_PRINT("[TASK2][R]: Sent Request\n");
   // Data
   sb_rsp_t rsp;
-  // now wait for the response
-  for(uint8_t i = 0; i < 4; i++)
+  for (uint64_t i = 0; i < N; ++i)
   {
-    rsp = rx_sb_to_task2.read();
-    DEBUG_PRINT("[TASK2][R]: Msg: %lx\n", (uint64_t)rsp.rsp_msg);
+    // add read data to vector_b1
+    vector_b0 << vector_b1.read() + (rx_sb.read()).rsp_msg;
+    // printf("%f %f\n", vector_b.read() + rx_task1_to_task2.read());
   }
+  DEBUG_PRINT("[TASK2]: Pushed Vector C\n");
+
+  // now send pageinfo to task3
+  tx_task3 << pageid;
   DEBUG_PRINT("[TASK2]: Done\n");
+}
+
+void task3( tapa::istream<float>& vector_b2,
+            tapa::istream<float>& vector_b0,
+            tapa::ostream<float>& vector_c,
+            tapa::ostream<sb_req_t>& tx_sb,
+            tapa::istream<sb_rsp_t>& rx_sb,
+            tapa::istream<sb_pageid_t>& rx_task2,
+            tapa::ostream<sb_pageid_t>& tx_task1)
+{
+  // hard wait for task2 to send page ID
+  sb_pageid_t pageid = rx_task2.read();
+
+  // Create the Read Request on this page
+  sb_req_t request1 = {0};
+  request1.c_dn = 1;
+  request1.fields.code = SB_REQ_READ_MSGS;
+  request1.fields.index = 0;    // start from index 0
+  request1.fields.length = N;   // need to receive N elements
+  request1.fields.pageid = pageid;
+  tx_sb << request1;
+  DEBUG_PRINT("[TASK3][R]: Sent Request\n");
+  // Data
+  sb_rsp_t rsp;
+  for (uint64_t i = 0; i < N; ++i)
+  {
+    // add read data to vector_b2
+    vector_c << vector_b2.read() + (rx_sb.read()).rsp_msg;
+    // printf("%f %f\n", vector_b.read() + rx_task1_to_task2.read());
+  }
+  DEBUG_PRINT("[TASK3]: Pushed Vector C\n");
+
+  // now send pageinfo to task1
+  tx_task1 << pageid;
+  DEBUG_PRINT("[TASK3]: Done\n");
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -781,25 +834,42 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
 /// KERNEL WRAPPER ///
 //////////////////////
 
-void VecAdd(tapa::mmap<const float> vector_a,
-            tapa::mmap<const float> vector_b,
+
+// mm2s-----a1-----,
+// mm2s-----a2-----'-----a0-----,
+// mm2s-----b1------------------'-----b0-----,
+// mm2s-----b2-------------------------------'-----c-----s2mm
+
+void VecAdd(tapa::mmap<const float> vector_a1,
+            tapa::mmap<const float> vector_a2,
+            tapa::mmap<const float> vector_b1,
+            tapa::mmap<const float> vector_b2,
             tapa::mmap<float> vector_c) {
-  tapa::stream<float> a_q("a");
-  tapa::stream<float> b_q("b");
+  tapa::stream<float> a0_q("a0");
+  tapa::stream<float> a1_q("a1");
+  tapa::stream<float> a2_q("a2");
+  tapa::stream<float> b0_q("b0");
+  tapa::stream<float> b1_q("b1");
+  tapa::stream<float> b2_q("b2");
   tapa::stream<float> c_q("c");
-  tapa::stream<float> task1_to_task2_pageinfo ("task1_to_task2_pageinfo");
+  tapa::stream<sb_pageid_t> task1_to_task2_pageinfo ("task1_to_task2_pageinfo");
+  tapa::stream<sb_pageid_t> task2_to_task3_pageinfo ("task2_to_task3_pageinfo");
+  tapa::stream<sb_pageid_t> task3_to_task1_pageinfo ("task3_to_task1_done");
   std::cout << "===" << std::endl;
 
   tapa::streams<sb_req_t, SB_NXCTRS> sb_rxqs("sb_rxqs");
   tapa::streams<sb_rsp_t, SB_NXCTRS> sb_txqs("sb_txqs");
   
   tapa::task()
-    .invoke(Mmap2Stream, vector_a, a_q)
-    .invoke(Mmap2Stream, vector_b, b_q)
+    .invoke(Mmap2Stream, vector_a1, a1_q)
+    .invoke(Mmap2Stream, vector_a2, a2_q)
+    .invoke(Mmap2Stream, vector_b1, b1_q)
+    .invoke(Mmap2Stream, vector_b2, b2_q)
     .invoke<tapa::detach>(sb_task, sb_rxqs, sb_txqs)
     // .invoke(vadd, a_q, b_q, c_q)
-    .invoke(task1, a_q,      sb_rxqs[0], sb_txqs[0], task1_to_task2_pageinfo)
-    .invoke(task2, b_q, c_q, sb_rxqs[1], sb_txqs[1], task1_to_task2_pageinfo)
+    .invoke(task1, a1_q, a2_q, a0_q, sb_rxqs[0], sb_txqs[0], task1_to_task2_pageinfo, task3_to_task1_pageinfo)
+    .invoke(task2, b1_q, a0_q, b0_q, sb_rxqs[1], sb_txqs[1], task1_to_task2_pageinfo, task2_to_task3_pageinfo)
+    .invoke(task3, b2_q, b0_q,  c_q, sb_rxqs[2], sb_txqs[2], task2_to_task3_pageinfo, task3_to_task1_pageinfo)
     .invoke(Stream2Mmap, c_q, vector_c);
 }
 
