@@ -529,7 +529,7 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
 */
 void ihd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ihd_read,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& ihd_to_rsg_read,
-        tapa::ibuffers<sb_msg_t[SB_MSGS_PER_PAGE], 4, 2, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& backend_pages) {
+        tapa::ibuffers<sb_msg_t[SB_MSGS_PER_PAGE], 16, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& backend_pages) {
         //tapa::ostreams<sb_std_t, SB_NXCTRS>& ihd_to_rsg_read) {
   bool burst_done[SB_NXCTRS] = {0}, rsp_done[SB_NXCTRS] = {0};
   sb_msg_t msgdata[SB_NXCTRS] ={0};
@@ -595,7 +595,7 @@ void ihd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ihd_read,
 void ohd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ohd_write,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& ohd_to_rsg_write,
         tapa::ostreams<uint64_t, 2>& debugtx, 
-        tapa::obuffers<sb_msg_t[SB_MSGS_PER_PAGE], 4, 2, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& backend_pages) {
+        tapa::obuffers<sb_msg_t[SB_MSGS_PER_PAGE], 16, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>>& backend_pages) {
         //tapa::ostreams<sb_std_t, SB_NXCTRS>& ohd_to_rsg_write) { 
   bool burst_done[SB_NXCTRS] = {0}, rsp_done[SB_NXCTRS] = {0};
   sb_msg_t msgdata[SB_NXCTRS] ={0};
@@ -692,7 +692,7 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
   tapa::stream<sb_std_t> rqr_to_rqp_grab("rqr_to_rqp_grab");
   tapa::stream<sb_std_t> rqr_to_rqp_free("rqr_to_rqp_free");
   tapa::streams<sb_std_t, SB_NXCTRS> rqr_to_rqp_read("rqr_to_rqp_read");
-  tapa::streams<sb_std_t, SB_NXCTRS, 8> rqr_to_rqp_write("rqr_to_rqp_write");
+  tapa::streams<sb_std_t, SB_NXCTRS> rqr_to_rqp_write("rqr_to_rqp_write");
   // RQP  <--->  PGM
   tapa::stream<sb_std_t> rqp_to_pgm_grab("rqp_to_pgm_grab");
   tapa::stream<sb_std_t> rqp_to_pgm_free("rqp_to_pgm_free");
@@ -709,7 +709,7 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
   // RQP  <--->  IHD
   tapa::streams<sb_std_t, SB_NXCTRS> rqp_to_ihd_read("rqp_to_ihd_read");
   // RQP  <--->  OHD
-  tapa::streams<sb_std_t, SB_NXCTRS, 8> rqp_to_ohd_write("rqp_to_ohd_write");
+  tapa::streams<sb_std_t, SB_NXCTRS> rqp_to_ohd_write("rqp_to_ohd_write");
   // IHD  <--->  RSG
   tapa::streams<sb_std_t, SB_NXCTRS> ihd_to_rsg_read("ihd_to_rsg_read");
   // IHD  <--->  RSG
@@ -719,7 +719,7 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
 
   // actual buffers
   // buffercore_t backend_pages;
-  tapa::buffers<sb_msg_t[SB_MSGS_PER_PAGE], 4, 2, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> backend_pages;
+  tapa::buffers<sb_msg_t[SB_MSGS_PER_PAGE], 16, 1, tapa::array_partition<tapa::normal>, tapa::memcore<tapa::bram>> backend_pages;
 
   tapa::task()
     // .invoke<tapa::detach>(rx_arbiter, (*brxqs_p), (*arbit_rxq_p))
@@ -790,8 +790,8 @@ void VecAdd(tapa::mmap<const float> vector_a,
   tapa::stream<float> task1_to_task2_pageinfo ("task1_to_task2_pageinfo");
   std::cout << "===" << std::endl;
 
-  tapa::streams<sb_req_t, SB_NXCTRS, 8> sb_rxqs("sb_rxqs");
-  tapa::streams<sb_rsp_t, SB_NXCTRS, 8> sb_txqs("sb_txqs");
+  tapa::streams<sb_req_t, SB_NXCTRS> sb_rxqs("sb_rxqs");
+  tapa::streams<sb_rsp_t, SB_NXCTRS> sb_txqs("sb_txqs");
   
   tapa::task()
     .invoke(Mmap2Stream, vector_a, a_q)
