@@ -8,7 +8,7 @@
 ///  SB CONFIG  ///
 ///////////////////
 
-#define SB_NXCTRS (2)
+#define SB_NXCTRS (3)
 #define SB_NRX    (SB_NXCTRS)
 #define SB_NTX    (SB_NXCTRS)
 

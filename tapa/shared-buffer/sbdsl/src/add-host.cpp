@@ -37,7 +37,9 @@ int main(int argc, char *argv[]) {
 
   int64_t kernel_time_us = tapa::invoke(VecAdd, FLAGS_bitstream,
     tapa::read_only_mmap<const float>(array_a1),
+    tapa::read_only_mmap<const float>(array_a2),
     tapa::read_only_mmap<const float>(array_b1),
+    tapa::read_only_mmap<const float>(array_b2),
     tapa::write_only_mmap<float>(array_c_fpga));
 
   bool fail = false;
