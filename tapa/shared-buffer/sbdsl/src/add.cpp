@@ -109,33 +109,29 @@ void task1( tapa::istream<float>& vector_a1,
   rsp = rx_sb.read();
   DEBUG_PRINT("[TASK1][W]: %x %lu\n", (uint32_t)rsp.fields.code, (uint64_t)rsp.fields.pageid);
  
-  seq_section:
+  // send the pageid (pointer) to task2
+  tx_task2 << task1_page;
+
+  // wait for task2 to mark done
+  bool vld_task2;
+  T1_RX_TASK2: do
   {
-    #pragma HLS protocol 
-    // send the pageid (pointer) to task2
-    tx_task2 << task1_page;
+    task2_page = rx_task2.peek(vld_task2);
+  }while(!vld_task2);
+  rx_task2.read();
 
-    // wait for task2 to mark done
-    bool vld_task2;
-    T1_RX_TASK2: while(!vld_task2)
-    {
-      task2_page = rx_task2.peek(vld_task2);
-    }
-    rx_task2.read();
+  // FREE REQUEST 1
+  tx_sb << sb_request_free(task1_page);
 
-    // FREE REQUEST 1
-    tx_sb << sb_request_free(task1_page);
-
-    // now wait for the response to be received
-    bool vld_rxsb;
-    T1_RX_SBRX: while(!vld_rxsb)
-    {
-      rsp = rx_sb.peek(vld_rxsb);
-    }
-    rx_sb.read();
-    
-    DEBUG_PRINT("[TASK1][F]: Free: Rsp: %x\n", (uint32_t)rsp.fields.code);
-  }
+  // now wait for the response to be received
+  bool vld_rxsb;
+  T1_RX_SBRX: do
+  {
+    rsp = rx_sb.peek(vld_rxsb);
+  }while(!vld_rxsb);
+  rx_sb.read();
+  
+  DEBUG_PRINT("[TASK1][F]: Free: Rsp: %x\n", (uint32_t)rsp.fields.code);
   // FREE REQUEST 2
   //request = {0};
   //request.c_dn = 1;
