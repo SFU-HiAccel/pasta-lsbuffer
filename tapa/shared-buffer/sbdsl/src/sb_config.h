@@ -28,9 +28,9 @@ using sb_msg_t        = uint64_t;
 #define SB_REQ_GRAB_PAGE  (0x4)
 #define SB_REQ_FREE_PAGE  (0x8)
 
-#define SB_RSP_DONE   (0x1<<4)
-#define SB_RSP_WAIT   (0x2<<4)
-#define SB_RSP_FAIL   (0x4<<4)
+#define SB_RSP_DONE       (0xD<<4)
+#define SB_RSP_WAIT       (0xE<<4)
+#define SB_RSP_FAIL       (0xF<<4)
 
 typedef struct {
   union{

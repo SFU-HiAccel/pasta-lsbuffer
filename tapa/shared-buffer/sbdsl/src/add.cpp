@@ -30,6 +30,50 @@ void vadd(tapa::istream<float>& a,
   }
 }
 
+sb_req_t sb_request_grab()
+{
+  #pragma HLS inline
+  sb_req_t request = {0};
+  request.c_dn = 1;
+  request.fields.code = SB_REQ_GRAB_PAGE;
+  request.fields.pageid = 1;                  // number of pages to allocate
+  return request; 
+}
+
+sb_req_t sb_request_free(sb_pageid_t page_id)
+{
+  #pragma HLS inline
+  sb_req_t request = {0};
+  request.c_dn = 1;
+  request.fields.code = SB_REQ_FREE_PAGE;
+  request.fields.pageid = page_id;            // this page to be freed
+  return request;
+}
+
+sb_req_t sb_request_write(sb_pageid_t page_id, sb_pageid_t start_index, uint8_t burst_length)
+{
+  #pragma HLS inline
+  sb_req_t request = {0};
+  request.c_dn = 1;                           // assert control packet
+  request.fields.code   = SB_REQ_WRITE_MSGS;
+  request.fields.index  = start_index;        // start from a specific index
+  request.fields.length = burst_length;       // how many messages to write
+  request.fields.pageid = page_id;            // at this page
+  return request;
+}
+
+sb_req_t sb_request_read(sb_pageid_t page_id, sb_pageid_t start_index, uint8_t burst_length)
+{
+  #pragma HLS inline
+  sb_req_t request = {0};
+  request.c_dn = 1;                           // assert control packet
+  request.fields.code   = SB_REQ_READ_MSGS;
+  request.fields.index  = start_index;        // start from a specific index
+  request.fields.length = burst_length;       // how many messages to write
+  request.fields.pageid = page_id;            // at this page
+  return request;
+}
+
 void task1( tapa::istream<float>& vector_a1,
             tapa::istream<float>& vector_a2,
             tapa::ostream<sb_req_t>& tx_sb,
@@ -37,31 +81,22 @@ void task1( tapa::istream<float>& vector_a1,
             tapa::istream<sb_pageid_t>& rx_task2,
             tapa::ostream<sb_pageid_t>& tx_task2)
 {
-
   // GRAB REQUEST
-  sb_req_t request = {0};
-  request.c_dn = 1;
-  request.fields.code = SB_REQ_GRAB_PAGE;
-  request.fields.pageid = 1;  // number of pages to allocate
-  tx_sb << request;
+  tx_sb << sb_request_grab();
 
   // now wait for the response to be received
   sb_rsp_t rsp;
   rsp = rx_sb.read();
   DEBUG_PRINT("[TASK1][G]: Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
   sb_pageid_t task1_page = rsp.fields.pageid;
+  sb_pageid_t task2_page;
 
   // we have the page above //
 
   // WRITE_REQUEST
-  request = {0};
-  request.c_dn = 1;
-  request.fields.code = SB_REQ_WRITE_MSGS;
-  request.fields.index = 0;     // start from index 0
-  request.fields.length = N;    // N messages to write
-  request.fields.pageid = task1_page;
-  DEBUG_PRINT("[TASK1][W]: Sending request: %lx\n", (uint64_t)request.req_msg);
+  sb_req_t request = sb_request_write(task1_page, 0, N);
   tx_sb << request;
+  DEBUG_PRINT("[TASK1][W]: Sending request: %lx\n", (uint64_t)request.req_msg);
   // Data
   request.c_dn = 0;
   for(int i = 0; i < N; i++)
@@ -72,25 +107,35 @@ void task1( tapa::istream<float>& vector_a1,
 
   // now wait for the response
   rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][W]: %lu %lu\n", (uint64_t)rsp.fields.code, (uint64_t)rsp.fields.pageid);
-  
-  // send the pageid (pointer) to task2
-  tx_task2 << task1_page;
+  DEBUG_PRINT("[TASK1][W]: %x %lu\n", (uint32_t)rsp.fields.code, (uint64_t)rsp.fields.pageid);
+ 
+  seq_section:
+  {
+    #pragma HLS protocol 
+    // send the pageid (pointer) to task2
+    tx_task2 << task1_page;
 
-  // wait for task2 to mark done
-  sb_pageid_t task2_page = rx_task2.read();
-  
-  // FREE REQUEST 1
-  request = {0};
-  request.c_dn = 1;
-  request.fields.code = SB_REQ_FREE_PAGE;
-  request.fields.pageid = task1_page;  // this page to be freed
-  tx_sb << request;
+    // wait for task2 to mark done
+    bool vld_task2;
+    T1_RX_TASK2: while(!vld_task2)
+    {
+      task2_page = rx_task2.peek(vld_task2);
+    }
+    rx_task2.read();
 
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][F]: Free: Rsp: %lu\n", (uint64_t)rsp.fields.code);
+    // FREE REQUEST 1
+    tx_sb << sb_request_free(task1_page);
 
+    // now wait for the response to be received
+    bool vld_rxsb;
+    T1_RX_SBRX: while(!vld_rxsb)
+    {
+      rsp = rx_sb.peek(vld_rxsb);
+    }
+    rx_sb.read();
+    
+    DEBUG_PRINT("[TASK1][F]: Free: Rsp: %x\n", (uint32_t)rsp.fields.code);
+  }
   // FREE REQUEST 2
   //request = {0};
   //request.c_dn = 1;
@@ -99,7 +144,6 @@ void task1( tapa::istream<float>& vector_a1,
   //tx_sb << request;
 
   //// now wait for the response to be received
-  //rsp;
   //rsp = rx_sb.read();
   //DEBUG_PRINT("[TASK1][F]: Free: Rsp: %lu\n", (uint64_t)rsp.fields.code);
 }
@@ -116,12 +160,7 @@ void task2( tapa::istream<float>& vector_b1,
   sb_pageid_t task1_page = rx_task1.read();
 
   // GRAB REQUEST
-  sb_req_t request = {0};
-  request.c_dn = 1;
-  request.fields.code = SB_REQ_GRAB_PAGE;
-  // number of pages to allocate
-  request.fields.pageid = 1; 
-  tx_sb << request;
+  tx_sb << sb_request_grab();
   // now wait for the response to be received
   sb_rsp_t rsp;
   rsp = rx_sb.read();
@@ -132,13 +171,8 @@ void task2( tapa::istream<float>& vector_b1,
   // we have the page above //
 
   // Create the Read Request on this page
-  sb_req_t request1 = {0};
-  request1.c_dn = 1;
-  request1.fields.code = SB_REQ_READ_MSGS;
-  request1.fields.index = 0;    // start from index 0
-  request1.fields.length = N;   // need to receive N elements
-  request1.fields.pageid = task1_page;
-  tx_sb << request1;
+  sb_req_t request = sb_request_read(task1_page, 0, N);
+  tx_sb << request;
   DEBUG_PRINT("[TASK2][R]: Sent Request\n");
   // Data
   request.c_dn = 0;
@@ -638,7 +672,7 @@ void ihd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ihd_read,
       {
         pageid[xctr] = req[xctr].fields.pageid;     // get pageid
         nmsgs[xctr]  = req[xctr].fields.length;     // get number of messages to read
-        rsp[xctr] = req[xctr];                      // store the request data in the response
+        rsp[xctr].c_dn = 0;                         // all responses are data packets
         msgs_txed[xctr] = 0;                        // set the burst counter to 0
         burst_done[xctr] = false;                   // burst is pending
         rsp_done[xctr] = false;                     // response is pending
@@ -655,8 +689,9 @@ void ihd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ihd_read,
           DEBUG_PRINT("[IHD][xctr:%2d][R]: Starting burst for %d messages\n", xctr, nmsgs[xctr]); 
           IHD_DATA_R: for (msgs_txed[xctr] = 0; msgs_txed[xctr] < nmsgs[xctr]; msgs_txed[xctr]++)
           {
-            msgdata[xctr] = page_ref[msgs_txed[xctr]];  // TODO: add starting index
-            rsp[xctr].std_msg = msgdata[xctr];
+            //msgdata[xctr] = page_ref[msgs_txed[xctr]];  // TODO: add starting index
+            //rsp[xctr].std_msg = msgdata[xctr];
+            rsp[xctr].std_msg = page_ref[msgs_txed[xctr]];
             ihd_to_rsg_read[xctr] << rsp[xctr];
             DEBUG_PRINT("[IHD][xctr:%2d][R]: Sent message (%d): %lx\n", xctr, msgs_txed[xctr], (uint64_t)msgdata[xctr]); 
           }
