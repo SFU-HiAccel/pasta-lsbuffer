@@ -1,5 +1,5 @@
 #define TILE    (32)
-#define N       (32)
+#define N       (2)
 #define DEPTH   (2)
 #define PACK_LENGTH 2
 #define NDBLKS (TILE/PACK_LENGTH)
@@ -18,5 +18,4 @@ using msg_t = data_type_mmap;
 void VecAdd(tapa::mmap<const float> vector_a1,
             tapa::mmap<const float> vector_a2,
             tapa::mmap<const float> vector_b1,
-            tapa::mmap<const float> vector_b2,
             tapa::mmap<float> vector_c);

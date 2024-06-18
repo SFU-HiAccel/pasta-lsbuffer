@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
     array_a2[i] = static_cast<float>(rand() % 100);
     array_b1[i] = static_cast<float>(rand() % 100);
     array_b2[i] = static_cast<float>(rand() % 100);
-    array_c_cpu[i] =  array_a1[i] + array_b1[i];// +
+    array_c_cpu[i] =  array_a1[i] + array_a2[i] + array_b1[i];// +
                       /*array_a2[i] + array_b2[i]*/;
   }
 
@@ -39,7 +39,6 @@ int main(int argc, char *argv[]) {
     tapa::read_only_mmap<const float>(array_a1),
     tapa::read_only_mmap<const float>(array_a2),
     tapa::read_only_mmap<const float>(array_b1),
-    tapa::read_only_mmap<const float>(array_b2),
     tapa::write_only_mmap<float>(array_c_fpga));
 
   bool fail = false;

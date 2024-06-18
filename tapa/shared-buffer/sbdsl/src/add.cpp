@@ -32,11 +32,10 @@ void vadd(tapa::istream<float>& a,
 
 void task1( tapa::istream<float>& vector_a1,
             tapa::istream<float>& vector_a2,
-            tapa::ostream<float>& vector_a0,
             tapa::ostream<sb_req_t>& tx_sb,
             tapa::istream<sb_rsp_t>& rx_sb,
-            tapa::ostream<sb_pageid_t>& tx_task2,
-            tapa::istream<sb_pageid_t>& rx_task3)
+            tapa::istream<sb_pageid_t>& rx_task2,
+            tapa::ostream<sb_pageid_t>& tx_task2)
 {
 
   // GRAB REQUEST
@@ -78,10 +77,10 @@ void task1( tapa::istream<float>& vector_a1,
   // send the pageid (pointer) to task2
   tx_task2 << task1_page;
 
-  // wait for task3 to mark done
-  task1_page = rx_task3.read();
+  // wait for task2 to mark done
+  sb_pageid_t task2_page = rx_task2.read();
   
-  // FREE REQUEST
+  // FREE REQUEST 1
   request = {0};
   request.c_dn = 1;
   request.fields.code = SB_REQ_FREE_PAGE;
@@ -89,57 +88,48 @@ void task1( tapa::istream<float>& vector_a1,
   tx_sb << request;
 
   // now wait for the response to be received
-  rsp;
   rsp = rx_sb.read();
   DEBUG_PRINT("[TASK1][F]: Free: Rsp: %lu\n", (uint64_t)rsp.fields.code);
+
+  // FREE REQUEST 2
+  //request = {0};
+  //request.c_dn = 1;
+  //request.fields.code = SB_REQ_FREE_PAGE;
+  //request.fields.pageid = task2_page;  // this page to be freed
+  //tx_sb << request;
+
+  //// now wait for the response to be received
+  //rsp;
+  //rsp = rx_sb.read();
+  //DEBUG_PRINT("[TASK1][F]: Free: Rsp: %lu\n", (uint64_t)rsp.fields.code);
 }
 
 void task2( tapa::istream<float>& vector_b1,
-            tapa::istream<float>& vector_a0,
-            tapa::ostream<float>& vector_b0,
-            tapa::ostream<sb_req_t>& tx_sb,
-            tapa::istream<sb_rsp_t>& rx_sb,
-            tapa::istream<sb_pageid_t>& rx_task1,
-            tapa::ostream<sb_pageid_t>& tx_task3)
-{
-
-  // hard wait for task1 to send page ID
-  sb_pageid_t pageid = rx_task1.read();
-
-  // Create the Read Request on this page
-  sb_req_t request1 = {0};
-  request1.c_dn = 1;
-  request1.fields.code = SB_REQ_READ_MSGS;
-  request1.fields.index = 0;    // start from index 0
-  request1.fields.length = N;   // need to receive N elements
-  request1.fields.pageid = pageid;
-  tx_sb << request1;
-  DEBUG_PRINT("[TASK2][R]: Sent Request\n");
-  // Data
-  sb_rsp_t rsp;
-  for (uint64_t i = 0; i < N; ++i)
-  {
-    // add read data to vector_b1
-    vector_b0 << vector_b1.read() + (rx_sb.read()).rsp_msg;
-    // printf("%f %f\n", vector_b.read() + rx_task1_to_task2.read());
-  }
-  DEBUG_PRINT("[TASK2]: Pushed Vector C\n");
-
-  // now send pageinfo to task3
-  tx_task3 << pageid;
-  DEBUG_PRINT("[TASK2]: Done\n");
-}
-
-void task3( tapa::istream<float>& vector_b2,
-            tapa::istream<float>& vector_b0,
             tapa::ostream<float>& vector_c,
             tapa::ostream<sb_req_t>& tx_sb,
             tapa::istream<sb_rsp_t>& rx_sb,
-            tapa::istream<sb_pageid_t>& rx_task2,
+            tapa::istream<sb_pageid_t>& rx_task1,
             tapa::ostream<sb_pageid_t>& tx_task1)
 {
-  // hard wait for task2 to send page ID
-  sb_pageid_t pageid = rx_task2.read();
+
+  // hard wait for task1 to send page ID
+  sb_pageid_t task1_page = rx_task1.read();
+
+  // GRAB REQUEST
+  sb_req_t request = {0};
+  request.c_dn = 1;
+  request.fields.code = SB_REQ_GRAB_PAGE;
+  // number of pages to allocate
+  request.fields.pageid = 1; 
+  tx_sb << request;
+  // now wait for the response to be received
+  sb_rsp_t rsp;
+  rsp = rx_sb.read();
+
+  DEBUG_PRINT("[TASK2][G]: Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
+  sb_pageid_t task2_page = rsp.fields.pageid;
+
+  // we have the page above //
 
   // Create the Read Request on this page
   sb_req_t request1 = {0};
@@ -147,23 +137,63 @@ void task3( tapa::istream<float>& vector_b2,
   request1.fields.code = SB_REQ_READ_MSGS;
   request1.fields.index = 0;    // start from index 0
   request1.fields.length = N;   // need to receive N elements
-  request1.fields.pageid = pageid;
+  request1.fields.pageid = task1_page;
   tx_sb << request1;
-  DEBUG_PRINT("[TASK3][R]: Sent Request\n");
+  DEBUG_PRINT("[TASK2][R]: Sent Request\n");
   // Data
-  sb_rsp_t rsp;
-  for (uint64_t i = 0; i < N; ++i)
+  request.c_dn = 0;
+  bool vld_b1, vld_rxsb;
+  for(int i = 0; i < N;)
   {
-    // add read data to vector_b2
-    vector_c << vector_b2.read() + (rx_sb.read()).rsp_msg;
-    // printf("%f %f\n", vector_b.read() + rx_task1_to_task2.read());
+    float data_b1 = vector_b1.peek(vld_b1);
+    sb_rsp_t data_rxsb = rx_sb.peek(vld_rxsb);
+    if(vld_b1 && vld_rxsb)
+    {
+      DEBUG_PRINT("[TASK2]: Received message %d\n", i);
+      vector_c << (data_b1 + data_rxsb.rsp_msg);
+      vector_b1.read();   // digest data from vector_b1
+      rx_sb.read();       // and from rx-sb 
+      i++;
+    }
   }
-  DEBUG_PRINT("[TASK3]: Pushed Vector C\n");
+  //// Create the Write Request on the new page
+  //request = {0};
+  //request.c_dn = 1;
+  //request.fields.code = SB_REQ_WRITE_MSGS;
+  //request.fields.index = 0;     // start from index 0
+  //request.fields.length = N;    // N messages to write
+  //request.fields.pageid = task2_page;
+  //DEBUG_PRINT("[TASK2][W]: Sending request: %lx\n", (uint64_t)request.req_msg);
+  //tx_sb << request;
+  //// Data
+  //request.c_dn = 0;
+  //bool vld_b1, vld_rxsb;
+  //for(int i = 0; i < N;)
+  //{
+  //  DEBUG_PRINT("[TASK2]: Waiting for message %d\n", i);
+  //  float data_b1 = vector_b1.peek(vld_b1);
+  //  sb_rsp_t data_rxsb = rx_sb.peek(vld_rxsb);
+  //  if(vld_b1 && vld_rxsb)
+  //  {
+  //    DEBUG_PRINT("[TASK2]: Received message %d\n", i);
+  //    request.req_msg = (data_b1 + data_rxsb.rsp_msg);
+  //    tx_sb << request;   // send the write data through tx-sb
+  //    vector_b1.read();   // digest data from vector_b1
+  //    rx_sb.read();       // and from rx-sb 
+  //    DEBUG_PRINT("[TASK2]: Sent message %d\n", i);
+  //    i++;
+  //  }
+  //}
+
+  //// now wait for the response for the write
+  //rsp = rx_sb.read();
+  //DEBUG_PRINT("[TASK2][W]: %lu %lu\n", (uint64_t)rsp.fields.code, (uint64_t)rsp.fields.pageid);
 
   // now send pageinfo to task1
-  tx_task1 << pageid;
-  DEBUG_PRINT("[TASK3]: Done\n");
+  tx_task1 << task2_page;
+  DEBUG_PRINT("[TASK2]: Done\n");
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////
 ///                SHARED BUFFER SUBTASKS AND GORY DETAILS                  ///
@@ -296,7 +326,7 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& rqp_to_ihd_read,
         tapa::ostreams<sb_std_t, SB_NXCTRS>& rqp_to_ohd_write) {
 
-  sb_std_t g_fwd_req, f_fwd_req, nb_fwd_req[SB_NXCTRS], pgm_rsp;
+  sb_std_t g_fwd_req, f_fwd_req, w_fwd_req[SB_NXCTRS], r_fwd_req[SB_NXCTRS], pgm_rsp;
   // Free > Grab > Read > Write
   for(bool vld_rqr_g, vld_rqr_f, vld_pgm_sts, vld_rqr_w[SB_NXCTRS], vld_rqr_r[SB_NXCTRS];;)
   {
@@ -309,13 +339,13 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
       // read code and compare the lower 4 bits to check request type
       if((pgm_rsp.fields.code & 0xF) == SB_REQ_FREE_PAGE)
       {
-        DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd rsp --> RSG\n", pgm_rsp.fields.index);
         rqp_to_rsg_free << pgm_to_rqp_sts.read();
+        DEBUG_PRINT("[RQP][xctr:%2d][F]: fwd rsp --> RSG\n", pgm_rsp.fields.index);
       }
       else if((pgm_rsp.fields.code & 0xF) == SB_REQ_GRAB_PAGE)
       {
-        DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd rsp --> RSG\n", pgm_rsp.fields.index);
         rqp_to_rsg_grab << pgm_to_rqp_sts.read();
+        DEBUG_PRINT("[RQP][xctr:%2d][G]: fwd rsp --> RSG\n", pgm_rsp.fields.index);
       }
     }
     else if(vld_rqr_f)   // free queue has some message
@@ -342,16 +372,16 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
     for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
     {
     #pragma HLS unroll
-      nb_fwd_req[xctr] = rqr_to_rqp_write[xctr].peek(vld_rqr_w[xctr]);
+      w_fwd_req[xctr] = rqr_to_rqp_write[xctr].peek(vld_rqr_w[xctr]);
       if(vld_rqr_w[xctr])
       {
-        rqp_to_rsg_write[xctr] << nb_fwd_req[xctr]; // ctrl pkt for RSG to track
+        rqp_to_rsg_write[xctr] << w_fwd_req[xctr]; // ctrl pkt for RSG to track
         // consume ctrl:write message to consume data further
-        nb_fwd_req[xctr] = rqr_to_rqp_write[xctr].read();
+        w_fwd_req[xctr] = rqr_to_rqp_write[xctr].read();
         // get the number of messages in this burst
-        sb_pageid_t msgs = nb_fwd_req[xctr].fields.length;  // TODO: doesn't look like `msgs` or `nb_fwd_req`  need to be created as an array because it is internal to the loop
+        sb_pageid_t msgs = w_fwd_req[xctr].fields.length;  // TODO: doesn't look like `msgs` or `nb_fwd_req`  need to be created as an array because it is internal to the loop
         DEBUG_PRINT("[RQP][xctr:%2d][W]: req.nmsgs:%2d\n", xctr, msgs);
-        rqp_to_ohd_write[xctr] << nb_fwd_req[xctr];
+        rqp_to_ohd_write[xctr] << w_fwd_req[xctr];
         sb_std_t data;
         while(msgs)
         {
@@ -371,16 +401,16 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
     {
     #pragma HLS unroll
       // non-blocking forwards
-      nb_fwd_req[xctr] = rqr_to_rqp_read[xctr].peek(vld_rqr_r[xctr]);
+      r_fwd_req[xctr] = rqr_to_rqp_read[xctr].peek(vld_rqr_r[xctr]);
       if(vld_rqr_r[xctr])
       {
-        sb_pageid_t msgs = nb_fwd_req[xctr].fields.length;  // TODO: doesn't look like `msgs` or `nb_fwd_req`  need to be created as an array because it is internal to the loop
+        sb_pageid_t msgs = r_fwd_req[xctr].fields.length;  // TODO: doesn't look like `msgs` or `nb_fwd_req`  need to be created as an array because it is internal to the loop
         DEBUG_PRINT("[RQP][xctr:%2d][R]: req.nmsgs:%2d\n", xctr, msgs);
-        rqp_to_ihd_read[xctr] << nb_fwd_req[xctr];  // for data
+        rqp_to_ihd_read[xctr] << r_fwd_req[xctr];  // for data
         DEBUG_PRINT("[RQP][xctr:%2d][R]: fwd req --> IHD\n", xctr);
-        rqp_to_rsg_read[xctr] << nb_fwd_req[xctr];  // for RSG to track
+        rqp_to_rsg_read[xctr] << r_fwd_req[xctr];  // for RSG to track
         DEBUG_PRINT("[RQP][xctr:%2d][R]: fwd req --> RSG\n", xctr);
-        nb_fwd_req[xctr] = rqr_to_rqp_read[xctr].read();
+        r_fwd_req[xctr] = rqr_to_rqp_read[xctr].read();
       }
     }
   }
@@ -446,11 +476,12 @@ void pgm(tapa::istream<sb_std_t>& rqp_to_pgm_grab,
 
       // send response
       rsp.fields.code = SB_RSP_DONE | SB_REQ_FREE_PAGE;
+      rsp.fields.index = fwd_rsp_f.fields.index;
       pgm_to_rqp_sts << rsp;
 
       rqp_to_pgm_free.read(); // consume the token
 
-      DEBUG_PRINT("[PGM][xctr:%2d][F]: fwd rsp --> RQP\n", fwd_rsp_f.fields.index);
+      DEBUG_PRINT("[PGM][xctr:%2d][F]: fwd rsp --> RQP\n", rsp.fields.index);
     }
 
     else if(vld_g)  // handle page allocation
@@ -487,10 +518,11 @@ void pgm(tapa::istream<sb_std_t>& rqp_to_pgm_grab,
       }
 
       // consume the token
+      rsp.fields.index = fwd_rsp_g.fields.index;
       pgm_to_rqp_sts << rsp;
       rqp_to_pgm_grab.read();
 
-      DEBUG_PRINT("[PGM][xctr:%2d][G]: fwd rsp --> RQP\n", fwd_rsp_g.fields.index);
+      DEBUG_PRINT("[PGM][xctr:%2d][G]: fwd rsp --> RQP\n", rsp.fields.index);
     }
     else {}
   }
@@ -505,26 +537,25 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
         tapa::ostreams<sb_rsp_t, SB_NXCTRS>& btxqs) {
 
   // Free > Grab > Read > Write
-  sb_std_t nb_fwd_rsp, b_fwd_rsp[SB_NXCTRS];
-  sb_rsp_t fwd_rsp[SB_NXCTRS];
+  sb_std_t f_fwd_rsp, g_fwd_rsp, r_fwd_rsp[SB_NXCTRS], w_fwd_rsp[SB_NXCTRS];
   for(bool vld_rqr_g, vld_rqr_f, vld_rqr_r[SB_NXCTRS], vld_rqr_w[SB_NXCTRS];;)
   {
     // non-blocking forwards
-    nb_fwd_rsp = rqp_to_rsg_free.peek(vld_rqr_f);
+    f_fwd_rsp = rqp_to_rsg_free.peek(vld_rqr_f);
     if(vld_rqr_f)   // free queue has some message
     {
-      sb_portid_t xctr = (sb_portid_t)nb_fwd_rsp.fields.length;
+      sb_portid_t xctr = (sb_portid_t)f_fwd_rsp.fields.index;
       DEBUG_PRINT("[RSG][xctr:%2d][F]: TX response\n", xctr);
-      btxqs[xctr] << std_to_rsp(nb_fwd_rsp);
-      nb_fwd_rsp = rqp_to_rsg_free.read();
+      btxqs[xctr] << std_to_rsp(f_fwd_rsp);
+      f_fwd_rsp = rqp_to_rsg_free.read();
     }
-    nb_fwd_rsp = rqp_to_rsg_grab.peek(vld_rqr_g);
+    g_fwd_rsp = rqp_to_rsg_grab.peek(vld_rqr_g);
     if(vld_rqr_g)   // grab queue has some message
     {
-      sb_portid_t xctr = (sb_portid_t)nb_fwd_rsp.fields.length;
+      sb_portid_t xctr = (sb_portid_t)g_fwd_rsp.fields.index;
       DEBUG_PRINT("[RSG][xctr:%2d][G]: TX response\n", xctr);
-      btxqs[xctr] << std_to_rsp(nb_fwd_rsp);
-      nb_fwd_rsp = rqp_to_rsg_grab.read();
+      btxqs[xctr] << std_to_rsp(g_fwd_rsp);
+      g_fwd_rsp = rqp_to_rsg_grab.read();
     }
 
     // READS
@@ -532,12 +563,11 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
     {
     #pragma HLS unroll
       // blocking forwards
-      b_fwd_rsp[xctr] = rqp_to_rsg_read[xctr].peek(vld_rqr_r[xctr]);
+      r_fwd_rsp[xctr] = rqp_to_rsg_read[xctr].peek(vld_rqr_r[xctr]);
       if(vld_rqr_r[xctr])
       {
         // get the number of messages in this burst
-        sb_pageid_t msgs = b_fwd_rsp[xctr].fields.length;
-        rqp_to_rsg_read[xctr].read();             // consume read ctrl pkt from RQP
+        sb_pageid_t msgs = r_fwd_rsp[xctr].fields.length;
         sb_std_t data;
         while(msgs--)
         {
@@ -546,9 +576,9 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
           // data.c_dn = 0;  // must already be a data packet
           btxqs[xctr] << std_to_rsp(data);
         }
-        DEBUG_PRINT("[RSG][xctr:%2d][R]: TX response\n", xctr);
         // consume the value from the ctrl:read queue
-        b_fwd_rsp[xctr] = rqp_to_rsg_read[xctr].read();
+        r_fwd_rsp[xctr] = rqp_to_rsg_read[xctr].read();
+        DEBUG_PRINT("[RSG][xctr:%2d][R]: TX response\n", xctr);
       }
     }
 
@@ -556,7 +586,7 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
     for(sb_portid_t xctr = 0; xctr < SB_NXCTRS; xctr++)
     {
     #pragma HLS unroll
-      b_fwd_rsp[xctr] = rqp_to_rsg_write[xctr].peek(vld_rqr_w[xctr]);
+      w_fwd_rsp[xctr] = rqp_to_rsg_write[xctr].peek(vld_rqr_w[xctr]);
       if(vld_rqr_w[xctr])
       {
         // need to wait for write response from OHD
@@ -565,7 +595,7 @@ void rsg(tapa::istream<sb_std_t>& rqp_to_rsg_grab,
         btxqs[xctr] << std_to_rsp(data);
         DEBUG_PRINT("[RSG][xctr:%2d][W]: TX response\n", xctr);
         // consume the value from the ctrl:write queue
-        b_fwd_rsp[xctr] = rqp_to_rsg_write[xctr].read();
+        w_fwd_rsp[xctr] = rqp_to_rsg_write[xctr].read();
       }
     }
   }
@@ -622,13 +652,13 @@ void ihd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ihd_read,
           DEBUG_PRINT("[IHD][xctr:%2d][R]: Acquiring Buffer\n", xctr); 
           auto section = backend_pages[pageid[xctr]].acquire();
           auto& page_ref = section();
-          DEBUG_PRINT("[IHD][xctr:%2d][R]: Starting burst\n", xctr); 
+          DEBUG_PRINT("[IHD][xctr:%2d][R]: Starting burst for %d messages\n", xctr, nmsgs[xctr]); 
           IHD_DATA_R: for (msgs_txed[xctr] = 0; msgs_txed[xctr] < nmsgs[xctr]; msgs_txed[xctr]++)
           {
             msgdata[xctr] = page_ref[msgs_txed[xctr]];  // TODO: add starting index
             rsp[xctr].std_msg = msgdata[xctr];
             ihd_to_rsg_read[xctr] << rsp[xctr];
-            DEBUG_PRINT("[IHD][xctr:%2d][R]: Sent message: %lx\n", xctr, (uint64_t)msgdata[xctr]); 
+            DEBUG_PRINT("[IHD][xctr:%2d][R]: Sent message (%d): %lx\n", xctr, msgs_txed[xctr], (uint64_t)msgdata[xctr]); 
           }
         }
         burst_done[xctr] = true;                    // mark burst as done
@@ -843,18 +873,13 @@ void sb_task(tapa::istreams<sb_req_t, SB_NXCTRS>& sb_rxqs,
 void VecAdd(tapa::mmap<const float> vector_a1,
             tapa::mmap<const float> vector_a2,
             tapa::mmap<const float> vector_b1,
-            tapa::mmap<const float> vector_b2,
             tapa::mmap<float> vector_c) {
-  tapa::stream<float> a0_q("a0");
   tapa::stream<float> a1_q("a1");
   tapa::stream<float> a2_q("a2");
-  tapa::stream<float> b0_q("b0");
   tapa::stream<float> b1_q("b1");
-  tapa::stream<float> b2_q("b2");
   tapa::stream<float> c_q("c");
   tapa::stream<sb_pageid_t> task1_to_task2_pageinfo ("task1_to_task2_pageinfo");
-  tapa::stream<sb_pageid_t> task2_to_task3_pageinfo ("task2_to_task3_pageinfo");
-  tapa::stream<sb_pageid_t> task3_to_task1_pageinfo ("task3_to_task1_done");
+  tapa::stream<sb_pageid_t> task2_to_task1_pageinfo ("task2_to_task1_pageinfo");
   std::cout << "===" << std::endl;
 
   tapa::streams<sb_req_t, SB_NXCTRS> sb_rxqs("sb_rxqs");
@@ -864,12 +889,10 @@ void VecAdd(tapa::mmap<const float> vector_a1,
     .invoke(Mmap2Stream, vector_a1, a1_q)
     .invoke(Mmap2Stream, vector_a2, a2_q)
     .invoke(Mmap2Stream, vector_b1, b1_q)
-    .invoke(Mmap2Stream, vector_b2, b2_q)
     .invoke<tapa::detach>(sb_task, sb_rxqs, sb_txqs)
     // .invoke(vadd, a_q, b_q, c_q)
-    .invoke(task1, a1_q, a2_q, a0_q, sb_rxqs[0], sb_txqs[0], task1_to_task2_pageinfo, task3_to_task1_pageinfo)
-    .invoke(task2, b1_q, a0_q, b0_q, sb_rxqs[1], sb_txqs[1], task1_to_task2_pageinfo, task2_to_task3_pageinfo)
-    .invoke(task3, b2_q, b0_q,  c_q, sb_rxqs[2], sb_txqs[2], task2_to_task3_pageinfo, task3_to_task1_pageinfo)
+    .invoke(task1, a1_q, a2_q, sb_rxqs[0], sb_txqs[0], task2_to_task1_pageinfo, task1_to_task2_pageinfo)
+    .invoke(task2, b1_q,  c_q, sb_rxqs[1], sb_txqs[1], task1_to_task2_pageinfo, task2_to_task1_pageinfo)
     .invoke(Stream2Mmap, c_q, vector_c);
 }
 
