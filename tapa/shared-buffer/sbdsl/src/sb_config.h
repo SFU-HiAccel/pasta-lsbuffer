@@ -8,7 +8,7 @@
 ///  SB CONFIG  ///
 ///////////////////
 
-#define SB_NXCTRS (3)
+#define SB_NXCTRS (2)
 #define SB_NRX    (SB_NXCTRS)
 #define SB_NTX    (SB_NXCTRS)
 
@@ -16,7 +16,7 @@
 #define SB_WORD_SIZE        (4)
 #define SB_WORD_SIZE_BITS   (32)    // TODO: SBIF_WORD_SIZE << 3
 #define SB_PAGE_SIZE        (1024)
-#define SB_MSGS_PER_PAGE    (8)   // TODO: SB_PAGE_SIZE/SB_WORD_SIZE
+#define SB_MSGS_PER_PAGE    (32)    // TODO: SB_PAGE_SIZE/SB_WORD_SIZE
 
 using sb_portid_t     = uint8_t;
 using sb_pageid_t     = uint16_t;
