@@ -570,6 +570,9 @@ def main(argv: Optional[List[str]] = None):
           tapacc_cmd,
           proc.returncode,
       )
+      # print the entire command
+      for s in tapacc_cmd:
+        print(s, end=' ')
       parser.exit(status=proc.returncode)
     tapa_program_json_dict = json.loads(proc.stdout)
 
