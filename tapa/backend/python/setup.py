@@ -43,7 +43,7 @@ setup(
         'jinja2',
         'pyverilog>=1.2.0',
         'pyyaml>=5.1',
-        'tapa-fast-cosim>=0.0.20220514.dev1',
+        'tapa-fast-cosim>=0.0.20220816.dev1',
         'toposort',
         'click>=7.1.2',
     ],
