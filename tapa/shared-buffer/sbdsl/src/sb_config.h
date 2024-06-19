@@ -23,14 +23,25 @@ using sb_pageid_t     = uint16_t;
 using sb_stream_t     = ap_uint<SB_WORD_SIZE_BITS>;
 using sb_msg_t        = uint64_t;
 
-#define SB_REQ_WRITE_MSGS (0x1)
-#define SB_REQ_READ_MSGS  (0x2)
+#define SB_REQ_WRITE_S    (0x1)   // single WRITE
+#define SB_REQ_WRITE_M    (0x5)   // multi  WRITE
+#define SB_REQ_READ_S     (0x2)   // single READ
+#define SB_REQ_READ_M     (0x6)   // multi  READ
+
+// let lower two bits define READ/WRITE direction
+#define SB_RW_MASK        (0x3)
+// continued R/W or not - this controls whether dummy xfer_ctrl b/w IOHD is sent
+#define SB_RW_CONT_MASK   (0x4) 
+#define SB_REQ_WRITE_MSGS (SB_REQ_WRITE_S)
+#define SB_REQ_READ_MSGS  (SB_REQ_READ_S)
+
 #define SB_REQ_GRAB_PAGE  (0x4)
 #define SB_REQ_FREE_PAGE  (0x8)
 
 #define SB_RSP_DONE       (0xD<<4)
 #define SB_RSP_WAIT       (0xE<<4)
 #define SB_RSP_FAIL       (0xF<<4)
+
 
 typedef struct {
   union{
