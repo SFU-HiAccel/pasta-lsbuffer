@@ -1,6 +1,6 @@
 SHELL:=/bin/bash
 #KERNEL=add
-#KERNEL_TOP=VecAdd
+KERNEL_TOP=vecadd
 #KERNEL_ARGS=
 PLATFORM=xilinx_u280_gen3x16_xdma_1_202211_1
 #BUILD_DIR_PREFIX=${SIM_WS}/builds/sb/shared-buffer/

@@ -32,10 +32,10 @@ ifndef PLACEMENT_STRATEGY
 PLACEMENT_STRATEGY="EarlyBlockPlacement"
 endif
 
-KERNEL_CO=${BUILD_DIR_PREFIX}/${KERNEL}
-KERNEL_XO=${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw.xo
-KERNEL_XCLBIN_EM=${BUILD_DIR_PREFIX}/vitis_run_hw_emu/${KERNEL}.${PLATFORM}.hw_emu.xclbin
-KERNEL_XCLBIN_HW=${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL}.${PLATFORM}.hw.xclbin
+KERNEL_CO=${BUILD_DIR_PREFIX}/${KERNEL_TOP}
+KERNEL_XO=${BUILD_DIR_PREFIX}/${KERNEL_TOP}.${PLATFORM}.hw.xo
+KERNEL_XCLBIN_EM=${BUILD_DIR_PREFIX}/vitis_run_hw_emu/${KERNEL_TOP}.${PLATFORM}.hw_emu.xclbin
+KERNEL_XCLBIN_HW=${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL_TOP}.${PLATFORM}.hw.xclbin
 RUNXOVDBG_OUTPUT_DIR="${BUILD_DIR_PREFIX}/vitis_run_hw_emu"
 VPP_TEMP_DIR="${RUNXOVDBG_OUTPUT_DIR}/${KERNEL_TOP}_${PLATFORM}.temp"
 
@@ -137,30 +137,34 @@ hw: ${KERNEL_XCLBIN_HW}
 
 ${KERNEL_XCLBIN_HW}: xo
 	@echo "[MAKE]: Building HW target"
-	cd ${BUILD_DIR_PREFIX} && source ${BUILD_DIR_PREFIX}/${KERNEL}.${PLATFORM}.hw_generate_bitstream.sh
+	cd ${BUILD_DIR_PREFIX} && source ${BUILD_DIR_PREFIX}/${KERNEL_TOP}.${PLATFORM}.hw_generate_bitstream.sh
 
 runhw: ${KERNEL_XCLBIN_HW}
 	@echo "[MAKE]: Target HW"
 	@echo "[MAKE]: Running HW (.xclbin)"
-	cd ${BUILD_DIR_PREFIX} && ${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${BUILD_DIR_PREFIX}/vitis_run_hw/${KERNEL_XCLBIN_HW}
+	cd ${BUILD_DIR_PREFIX} && ${KERNEL_CO} ${KERNEL_ARGS} --bitstream=${KERNEL_XCLBIN_HW}
 
 ### CLEAN
 cleanall: clean cleanxo cleandbg cleanhw
 	@echo "[MAKE]: Cleaned everything"
 
 cleanhw:
-	rm -rf vitis_run_hw
+	@echo "[MAKE]: Cleaning HW in ${BUILD_DIR_PREFIX}/vitis_run_hw"
+	rm -rf ${BUILD_DIR_PREFIX}/vitis_run_hw
 
 clean:
+	@echo "[MAKE]: Cleaning C artefacts"
 	rm -f ${KERNEL_CO}
 
 cleanxo:
+	@echo "[MAKE]: Cleaning XO artefacts"
 	rm -f ${KERNEL_XCLBIN_EM}
 	rm -f ${KERNEL_XO}
-	rm -f ${KERNEL}.${PLATFORM}.hw_generate_bitstream.sh
+	rm -f ${BUILD_DIR_PREFIX}/${KERNEL_TOP}.${PLATFORM}.hw_generate_bitstream.sh
 	rm -rf ${KERNEL_XO}.tapa
 
 cleandbg:
+	@echo "[MAKE]: Cleaning debug artefacts in ${BUILD_DIR_PREFIX}"
 # delete all logs
 	rm -f ${BUILD_DIR_PREFIX}/*.jou
 	rm -f ${BUILD_DIR_PREFIX}/*.log
@@ -173,12 +177,12 @@ cleandbg:
 	rm -rf ${BUILD_DIR_PREFIX}/xsim.dir
 # only delete wave configurations that were automatically generated	
 	rm -rf ${BUILD_DIR_PREFIX}/*${PLATFORM}*.wcfg
-	rm -f  ${KERNELXO}
+	rm -f  ${KERNEL_XO}
 	rm -rf ${KERNEL_XO}.tapa
 # delete some intermediary files generated from the custom scripts
 	cd ${BUILD_DIR_PREFIX}
-	rm -f  opencl_trace.csv profile_kernels.csv summary.csv timeline_kernels.csv runs.md
+	rm -f opencl_trace.csv profile_kernels.csv summary.csv timeline_kernels.csv runs.md
 
 cleanrtl:
-	@echo "[MAKE]: Cleaning ${KERNEL_XO}.tapa/hdl/"
+	@echo "[MAKE]: Cleaning RTL artefacts at ${KERNEL_XO}.tapa/hdl/"
 	rm -rf ${KERNEL_XO}.tapa/hdl/
