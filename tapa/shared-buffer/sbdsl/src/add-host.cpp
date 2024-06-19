@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
 
   const int n_tiles_per_pe = N / TILE;
 
-  int64_t kernel_time_us = tapa::invoke(VecAdd, FLAGS_bitstream,
+  int64_t kernel_time_us = tapa::invoke(vecadd, FLAGS_bitstream,
     tapa::read_only_mmap<const float>(array_a1),
     tapa::read_only_mmap<const float>(array_a2),
     tapa::read_only_mmap<const float>(array_b1),
