@@ -15,7 +15,7 @@ using data_type = float;
 using data_type_mmap = float_v2;
 using msg_t = data_type_mmap;
 
-void VecAdd(tapa::mmap<const float> vector_a1,
+void vecadd(tapa::mmap<const float> vector_a1,
             tapa::mmap<const float> vector_a2,
             tapa::mmap<const float> vector_b1,
             tapa::mmap<float> vector_c);
