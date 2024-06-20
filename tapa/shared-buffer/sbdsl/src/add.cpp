@@ -201,7 +201,7 @@ io_section:{
     if(vld_rxsb)
     {
       DEBUG_PRINT("[TASK2]: Received message %d\n", i);
-      rx_sb.read();       // and from rx-sb 
+      rx_sb.read();       // digest data from rx-sb 
       i++;
     }
   }
@@ -271,7 +271,6 @@ io_section:{
 //        }
 //    }
 //}
-
 
 // Request Router
 void rqr(tapa::istreams<sb_req_t, SB_NXCTRS>& brxqs,
@@ -350,7 +349,6 @@ void rqr(tapa::istreams<sb_req_t, SB_NXCTRS>& brxqs,
     }
   }
 }
-
 
 /**
  * Task     : Request Parser
@@ -465,7 +463,6 @@ void rqp(tapa::istream<sb_std_t>& pgm_to_rqp_sts,
     }
   }
 }
-
 
 // Function to find the index of the first 0 bit in a number
 inline uint8_t find_first_zero_bit_index(uint8_t num) {
@@ -822,7 +819,7 @@ void ohd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ohd_write,
       if(xfer_ctrl_valid[xctr])
       {
         // acquire the buffer for this page to spin token back to PASTA's occupied sections FIFO
-        OHD_DUMMY_ACQUIRE_W: for(uint8_t dummy = 0; dummy < 1; dummy++)
+        OHD_DUMMY_ACQUIRE_W: do
         {
           auto section = backend_pages[dummy_xfer_req[xctr]].acquire();
           auto& page_ref = section();
@@ -830,7 +827,7 @@ void ohd(tapa::istreams<sb_std_t, SB_NXCTRS>& rqp_to_ohd_write,
           // {
           //   page_ref[0] = 0;
           // }while(false);
-        }
+        }while(false);
         DEBUG_PRINT("[OHD][xctr:%2d][T]: token for pageid %d recirculated\n", xctr, dummy_xfer_req[xctr]); 
         ihd_to_ohd_xfer_ctrl[xctr].read();
       }
@@ -853,7 +850,6 @@ void debug_task(tapa::istreams<uint64_t, SB_NXCTRS>& debugstreams)
     }
   }
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 /// TOP-LEVEL SB TASK
