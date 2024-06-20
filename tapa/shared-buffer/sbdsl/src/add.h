@@ -1,5 +1,5 @@
 #define TILE    (32)
-#define N       (32)
+#define N       (2)
 #define DEPTH   (2)
 #define PACK_LENGTH 2
 #define NDBLKS (TILE/PACK_LENGTH)
