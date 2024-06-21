@@ -81,78 +81,47 @@ void task1( tapa::istream<float>& vector_a1,
             tapa::istream<sb_pageid_t>& rx_task2,
             tapa::ostream<sb_pageid_t>& tx_task2)
 {
-
   sb_rsp_t rsp;
+  bool vld;
   sb_pageid_t task1_page, task2_page;
-io_section: {
+
+io_section:{
+  #pragma HLS protocol fixed
   // GRAB REQUEST
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 1Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
-
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 2Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
-
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 3Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
-
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 4Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
-
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 5Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
+  T1_GRAB_LOOP: for(int i = 0; i < 2; i++)
+  {
+    #pragma HLS protocol fixed
+    tx_sb << sb_request_grab();
+    // now wait for the response to be received
+    bool vld;
+    T1_CHECK_GRAB_RSP: do {
+      rsp = rx_sb.peek(vld);
+    }while(!vld);
+    rx_sb.read();
+    DEBUG_PRINT("[TASK1][G]: Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
+    task1_page = rsp.fields.pageid;
+  }
 
   tx_sb << sb_request_free(task1_page);
   // now wait for the response to be received
-  rsp = rx_sb.read();
+  do {
+    rsp = rx_sb.peek(vld);
+  }while(!vld);
+  rx_sb.read();
+  
   DEBUG_PRINT("[TASK1][F]: Free: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
   task1_page = rsp.fields.pageid;
 
   tx_sb << sb_request_grab();
   // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 6Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
+  do {
+    rsp = rx_sb.peek(vld);
+  }while(!vld);
+  rx_sb.read();
+  DEBUG_PRINT("[TASK1][G]: Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
   task1_page = rsp.fields.pageid;
 
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 7Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
-
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 8Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
-
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]: 9Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
-
-  tx_sb << sb_request_grab();
-  // now wait for the response to be received
-  rsp = rx_sb.read();
-  DEBUG_PRINT("[TASK1][G]:10Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  task1_page = rsp.fields.pageid;
   // we have the page above //
-}
 
   // WRITE_REQUEST
   sb_req_t request = sb_request_write(task1_page, 0, N, false);
@@ -160,14 +129,16 @@ io_section: {
   DEBUG_PRINT("[TASK1][W]: Sending request: %lx\n", (uint64_t)request.req_msg);
   // Data
   request.c_dn = 0;
-  for(int i = 0; i < N; i++)
-  {
+  T1_WRITE_DATA: for(int i = 0; i < N; i++) {
     request.req_msg = (vector_a1.read() + vector_a2.read());
     tx_sb << request;
   }
 
   // now wait for the response
-  rsp = rx_sb.read();
+  do {
+    rsp = rx_sb.peek(vld);
+  }while(!vld);
+  rx_sb.read();
   DEBUG_PRINT("[TASK1][W]: %x %lu\n", (uint32_t)rsp.fields.code, (uint64_t)rsp.fields.pageid);
  
   // send the pageid (pointer) to task2
@@ -175,8 +146,7 @@ io_section: {
 
   // wait for task2 to mark done
   bool vld_task2;
-  T1_RX_TASK2: do
-  {
+  T1_RX_TASK2: do {
     task2_page = rx_task2.peek(vld_task2);
   }while(!vld_task2);
   rx_task2.read();
@@ -186,11 +156,11 @@ io_section: {
 
   // now wait for the response to be received
   bool vld_rxsb;
-  T1_RX_SBRX: do
-  {
+  T1_RX_SBRX: do {
     rsp = rx_sb.peek(vld_rxsb);
   }while(!vld_rxsb);
   rx_sb.read();
+}
   
   DEBUG_PRINT("[TASK1][F]: Free: Rsp: %x\n", (uint32_t)rsp.fields.code);
   // FREE REQUEST 2
@@ -212,6 +182,7 @@ void task2( tapa::istream<float>& vector_b1,
             tapa::istream<sb_pageid_t>& rx_task1,
             tapa::ostream<sb_pageid_t>& tx_task1)
 {
+  #pragma HLS protocol fixed
 
   // hard wait for task1 to send page ID
   sb_pageid_t task1_page = rx_task1.read();
