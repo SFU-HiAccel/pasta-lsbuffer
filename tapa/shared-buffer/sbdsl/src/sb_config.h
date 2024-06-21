@@ -12,7 +12,7 @@
 #define SB_NRX    (SB_NXCTRS)
 #define SB_NTX    (SB_NXCTRS)
 
-#define SB_NUM_PAGES        (8)
+#define SB_NUM_PAGES        (16)
 #define SB_WORD_SIZE        (4)
 #define SB_WORD_SIZE_BITS   (32)    // TODO: SBIF_WORD_SIZE << 3
 #define SB_PAGE_SIZE        (1024)

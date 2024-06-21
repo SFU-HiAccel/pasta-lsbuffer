@@ -81,15 +81,45 @@ void task1( tapa::istream<float>& vector_a1,
             tapa::istream<sb_pageid_t>& rx_task2,
             tapa::ostream<sb_pageid_t>& tx_task2)
 {
-  // GRAB REQUEST
-  tx_sb << sb_request_grab();
-
-  // now wait for the response to be received
   sb_rsp_t rsp;
-  rsp = rx_sb.read();
+  bool vld;
+  sb_pageid_t task1_page, task2_page;
+
+io_section:{
+  #pragma HLS protocol fixed
+  // GRAB REQUEST
+  T1_GRAB_LOOP: for(int i = 0; i < 2; i++)
+  {
+    #pragma HLS protocol fixed
+    tx_sb << sb_request_grab();
+    // now wait for the response to be received
+    bool vld;
+    T1_CHECK_GRAB_RSP: do {
+      rsp = rx_sb.peek(vld);
+    }while(!vld);
+    rx_sb.read();
+    DEBUG_PRINT("[TASK1][G]: Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
+    task1_page = rsp.fields.pageid;
+  }
+
+  tx_sb << sb_request_free(task1_page);
+  // now wait for the response to be received
+  do {
+    rsp = rx_sb.peek(vld);
+  }while(!vld);
+  rx_sb.read();
+  
+  DEBUG_PRINT("[TASK1][F]: Free: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
+  task1_page = rsp.fields.pageid;
+
+  tx_sb << sb_request_grab();
+  // now wait for the response to be received
+  do {
+    rsp = rx_sb.peek(vld);
+  }while(!vld);
+  rx_sb.read();
   DEBUG_PRINT("[TASK1][G]: Grab: Rsp: %lu\n", (uint64_t)rsp.fields.pageid);
-  sb_pageid_t task1_page = rsp.fields.pageid;
-  sb_pageid_t task2_page;
+  task1_page = rsp.fields.pageid;
 
   // we have the page above //
 
@@ -99,14 +129,16 @@ void task1( tapa::istream<float>& vector_a1,
   DEBUG_PRINT("[TASK1][W]: Sending request: %lx\n", (uint64_t)request.req_msg);
   // Data
   request.c_dn = 0;
-  for(int i = 0; i < N; i++)
-  {
+  T1_WRITE_DATA: for(int i = 0; i < N; i++) {
     request.req_msg = (vector_a1.read() + vector_a2.read());
     tx_sb << request;
   }
 
   // now wait for the response
-  rsp = rx_sb.read();
+  do {
+    rsp = rx_sb.peek(vld);
+  }while(!vld);
+  rx_sb.read();
   DEBUG_PRINT("[TASK1][W]: %x %lu\n", (uint32_t)rsp.fields.code, (uint64_t)rsp.fields.pageid);
  
   // send the pageid (pointer) to task2
@@ -114,8 +146,7 @@ void task1( tapa::istream<float>& vector_a1,
 
   // wait for task2 to mark done
   bool vld_task2;
-  T1_RX_TASK2: do
-  {
+  T1_RX_TASK2: do {
     task2_page = rx_task2.peek(vld_task2);
   }while(!vld_task2);
   rx_task2.read();
@@ -125,11 +156,11 @@ void task1( tapa::istream<float>& vector_a1,
 
   // now wait for the response to be received
   bool vld_rxsb;
-  T1_RX_SBRX: do
-  {
+  T1_RX_SBRX: do {
     rsp = rx_sb.peek(vld_rxsb);
   }while(!vld_rxsb);
   rx_sb.read();
+}
   
   DEBUG_PRINT("[TASK1][F]: Free: Rsp: %x\n", (uint32_t)rsp.fields.code);
   // FREE REQUEST 2
@@ -151,6 +182,7 @@ void task2( tapa::istream<float>& vector_b1,
             tapa::istream<sb_pageid_t>& rx_task1,
             tapa::ostream<sb_pageid_t>& tx_task1)
 {
+  #pragma HLS protocol fixed
 
   // hard wait for task1 to send page ID
   sb_pageid_t task1_page = rx_task1.read();
@@ -515,15 +547,15 @@ void pgm(tapa::istream<sb_std_t>& rqp_to_pgm_grab,
       DEBUG_PRINT("[PGM][xctr:%2d][F]: pageid %d\n", fwd_rsp_f.fields.index, fwd_rsp_f.fields.pageid);
       
       // update page info
-      free_pageid     = fwd_rsp_f.fields.pageid;                      // get the pageid
+      free_pageid     = fwd_rsp_f.fields.pageid;                    // get the pageid
       free_vld8_pre   = valid[free_pageid>>3];                      // get the 8-bit valid byte
       free_pageid_in8 = free_pageid & 0x7;                          // get the 3LSBs from `pageid`
       free_vld8_new   = free_vld8_pre & ~(1 << free_pageid_in8);    // unset this specific bit
       valid[free_pageid>>3] = free_vld8_new;
 
       // send response
-      rsp.fields.code = SB_RSP_DONE | SB_REQ_FREE_PAGE;
-      rsp.fields.index = fwd_rsp_f.fields.index;
+      rsp.fields.code   = SB_RSP_DONE | SB_REQ_FREE_PAGE;
+      rsp.fields.index  = fwd_rsp_f.fields.index;
       pgm_to_rqp_sts << rsp;
 
       rqp_to_pgm_free.read(); // consume the token
@@ -549,8 +581,8 @@ void pgm(tapa::istream<sb_std_t>& rqp_to_pgm_grab,
         // update page info
         grab_vld8_pre   = valid[grab_avl_idx];                        // get the 8-bit valid byte
         grab_pageid_in8 = avl_page_lut[grab_vld8_pre];                // find a page which is keeping the bin empty
-        grab_vld8_new   = grab_vld8_pre & ~(1 << grab_pageid_in8);    // unset this specific bit
-        valid[free_pageid>>3] = free_vld8_new;
+        grab_vld8_new   = grab_vld8_pre | (1 << grab_pageid_in8);     // set this specific bit
+        valid[grab_avl_idx] = grab_vld8_new;
 
         grab_pageid     = (grab_avl_idx << 3) | grab_pageid_in8;      // form the pageid
         rsp.fields.code = SB_RSP_DONE | SB_REQ_GRAB_PAGE;
