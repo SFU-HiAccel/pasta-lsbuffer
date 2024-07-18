@@ -119,7 +119,10 @@ class obuffer : public virtual internal::basic_buffer<T, n_sections> {
   using section_t = section<T, n_sections, dims...>;
   section_t acquire() { return section_t(*this, true); }
 #ifdef TAPA_BUFFER_EXPLICIT_RELEASE
-  void release() { section_t(*this, true).release_section(); }
+  void release() {
+    printf("Releasing for OBuffer\n");
+    section_t(*this, true).release_section();
+  }
 #endif
 };
 
@@ -154,7 +157,10 @@ class ibuffer : public virtual internal::basic_buffer<T, n_sections> {
   using section_t = section<T, n_sections, dims...>;
   section_t acquire() { return section_t(*this, false); }
 #ifdef TAPA_BUFFER_EXPLICIT_RELEASE
-  void release() { section_t(*this, false).release_section(); }
+  void release() {
+    printf("Releasing for IBuffer\n");
+    section_t(*this, false).release_section2();
+  }
 #endif
 };
 
@@ -192,8 +198,16 @@ class section {
   T& operator()() { return data.inner_data->ptr[section_id]; }
   const T& operator()() const { return data.inner_data->ptr[section_id]; }
 
-#ifndef TAPA_BUFFER_EXPLICIT_RELEASE
-  ~section() {
+#ifdef TAPA_BUFFER_EXPLICIT_RELEASE
+  void release_section() {
+    if (for_producer) {
+      data.inner_data->occupied_sections.write(section_id);
+    } else {
+      data.inner_data->free_sections.write(section_id);
+    }
+  }
+  void release_section2() {
+    printf("Releasing through indirect call\n");
     if (for_producer) {
       data.inner_data->occupied_sections.write(section_id);
     } else {
@@ -201,7 +215,7 @@ class section {
     }
   }
 #else
-  void release_section() {
+  ~section() {
     if (for_producer) {
       data.inner_data->occupied_sections.write(section_id);
     } else {
