@@ -13,6 +13,10 @@ void load(tapa::mmap<const float> vector,
 #pragma HLS pipeline II=1
       buf_ref[j] = vector[tile_id * TILE + j];
     }
+    #ifdef TAPA_EXPLICIT_BUFFER_RELEASE
+    section.release_section();
+    //buffer.release();
+    #endif
   }
 }
 
@@ -38,6 +42,14 @@ void vadd(tapa::ibuffer<float[TILE], 2>& buffer_a,
       buf_rf_c[j] = buf_rf_a[j] + buf_rf_b[j];
       buf_rf_c[j] = buf_rf_a[j] + buf_rf_b[j];
     }
+    #ifdef TAPA_EXPLICIT_BUFFER_RELEASE
+    section_a.release_section();
+    section_b.release_section();
+    section_c.release_section();
+    //buffer_a.release();
+    //buffer_b.release();
+    //buffer_c.release();
+    #endif
   }
 }
 
@@ -70,6 +82,16 @@ void store(tapa::mmap<float> vector,
 #pragma HLS pipeline II=1
       vector[PTS_PER_PE*3 + tile_id*TILE + j] = buf_rf_4[j];
     }
+    #ifdef TAPA_EXPLICIT_BUFFER_RELEASE
+    //buf_provider_1.release_section();
+    //buf_provider_2.release_section();
+    //buf_provider_3.release_section();
+    //buf_provider_4.release_section();
+    buffers_c[0].release();
+    buffers_c[1].release();
+    buffers_c[2].release();
+    buffers_c[3].release();
+    #endif
   }
 }
 
