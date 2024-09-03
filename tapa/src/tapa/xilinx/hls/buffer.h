@@ -13,31 +13,43 @@ template <typename T, int n_sections, typename... dims>
 class section {
  public:
   T& operator()() {
-#pragma HLS inline
+    #pragma HLS inline
     last = true;
     return buf_ref.data[section_id];
   }
 
   const T& operator()() const {
-#pragma HLS inline
+    #pragma HLS inline
     last = true;
     return buf_ref.data[section_id];
   }
 
-// write the section_id to the buffer's sink on destruction
-  ~section() {
-#pragma HLS inline
+#ifdef TAPA_BUFFER_EXPLICIT_RELEASE
+  void release_section() {
+    #pragma HLS inline
     if (last) {
       buf_ref.sink.write(section_id);
     }
   }
+#else
+// write the section_id to the buffer's sink on destruction
+  ~section() {
+    #pragma HLS inline
+    if (last) {
+      buf_ref.sink.write(section_id);
+    }
+  }
+#endif
 
  private:
   using buffer_t = _buffer<T, n_sections, dims...>;
   friend buffer_t;
 
   section(buffer_t& buf_ref) : buf_ref(buf_ref) {
-#pragma HLS inline
+  }
+
+  void init() {
+    #pragma HLS inline
     section_id = buf_ref.src.read();
   }
 
@@ -50,9 +62,13 @@ template <typename T, int n_sections, typename... dims>
 class _buffer {
  public:
   using section_t = section<T, n_sections, dims...>;
-  section_t acquire() {
-#pragma HLS inline
+  section_t create_section() {
+    #pragma HLS inline
     return *this;
+  }
+  void acquire(section_t& section) {
+    #pragma HLS inline
+    section.init();
   }
 
   hls::stream<int> src;
@@ -92,3 +108,4 @@ class buffers;
 }  // namespace tapa
 
 #endif
+

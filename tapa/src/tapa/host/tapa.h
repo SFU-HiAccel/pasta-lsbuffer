@@ -11,6 +11,7 @@
 #include "tapa/host/vec.h"
 
 #ifdef TAPA_BUFFER_SUPPORT
+//#define TAPA_BUFFER_EXPLICIT_RELEASE
 #include "tapa/host/buffer.h"
 #endif
 

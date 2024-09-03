@@ -11,6 +11,7 @@
 #include "tapa/xilinx/hls/util.h"
 #include "tapa/xilinx/hls/vec.h"
 #ifdef TAPA_BUFFER_SUPPORT
+//#define TAPA_BUFFER_EXPLICIT_RELEASE
 #include "tapa/xilinx/hls/buffer.h"
 #endif
 

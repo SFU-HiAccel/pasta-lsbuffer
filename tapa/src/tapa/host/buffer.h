@@ -117,7 +117,16 @@ class obuffer : public virtual internal::basic_buffer<T, n_sections> {
 
  public:
   using section_t = section<T, n_sections, dims...>;
-  section_t acquire() { return section_t(*this, true); }
+  section_t create_section() { return section_t(*this, true); }
+  void acquire(section_t& section) {
+    section.init();
+  }
+#ifdef TAPA_BUFFER_EXPLICIT_RELEASE
+  void release() {
+    printf("Releasing for OBuffer\n");
+    section_t(*this, true).release_section();
+  }
+#endif
 };
 
 /// Provides consumer-side access to a @c tapa::buffer object where it is used
@@ -149,7 +158,16 @@ class ibuffer : public virtual internal::basic_buffer<T, n_sections> {
 
  public:
   using section_t = section<T, n_sections, dims...>;
-  section_t acquire() { return section_t(*this, false); }
+  section_t create_section() { return section_t(*this, false); }
+  void acquire(section_t& section) {
+    section.init();
+  }
+#ifdef TAPA_BUFFER_EXPLICIT_RELEASE
+  void release() {
+    printf("Releasing for IBuffer\n");
+    section_t(*this, false).release_section();
+  }
+#endif
 };
 
 // diamond inheritance so that `buffer&` can be cast to `ibuffer&` and
@@ -186,6 +204,15 @@ class section {
   T& operator()() { return data.inner_data->ptr[section_id]; }
   const T& operator()() const { return data.inner_data->ptr[section_id]; }
 
+#ifdef TAPA_BUFFER_EXPLICIT_RELEASE
+  void release_section() {
+    if (for_producer) {
+      data.inner_data->occupied_sections.write(section_id);
+    } else {
+      data.inner_data->free_sections.write(section_id);
+    }
+  }
+#else
   ~section() {
     if (for_producer) {
       data.inner_data->occupied_sections.write(section_id);
@@ -193,6 +220,7 @@ class section {
       data.inner_data->free_sections.write(section_id);
     }
   }
+#endif
 
  private:
   using buffer_t = internal::basic_buffer<T, n_sections>;
@@ -203,14 +231,18 @@ class section {
   friend class obuffer<T, n_sections, dims...>;
   friend class ibuffer<T, n_sections, dims...>;
 
+  section(buffer_t& buf, bool for_producer) :
+    data(buf), for_producer(for_producer) {
+  }
+
   // block on the src fifo for the section ID
-  section(buffer_t& buf, bool for_producer = true)
-      : data(buf), for_producer(for_producer) {
+  void init() {
     if (for_producer) {
       section_id = data.inner_data->free_sections.read();
     } else {
       section_id = data.inner_data->occupied_sections.read();
     }
+    valid = true;
   }
 
   // the actual buffer object and the section_id this instance
@@ -219,6 +251,7 @@ class section {
   int section_id;
   // whether the instance is for a producer task or a consumer task
   const bool for_producer;
+  bool valid = false; // init default as dummy buffer
 };
 
 namespace internal {
