@@ -130,9 +130,13 @@ def create_parser() -> argparse.ArgumentParser:
       ' E.g., --other-hls-configs "config_compile -unsafe_math_optimizations" ',
   )
   parser.add_argument('--enable-buffer-support',
-                      action='count',
+                      action='store_true',
                       dest='enable_buffer_support',
                       help='Enable TAPA buffer type support')
+  parser.add_argument('--enable-buffer-exprel',
+                      action='store_true',
+                      dest='enable_buffer_explicit_release',
+                      help='Enable explicit-release mechanism for PASTA buffers')
 
   parser.add_argument(
       '--separate-complex-buffer-tasks',
@@ -531,8 +535,10 @@ def main(argv: Optional[List[str]] = None):
     )
     tapacc_cmd += '-top', args.top, '--', '-I', tapa_include_dir
 
-    if args.enable_buffer_support is not None:
+    if args.enable_buffer_support:
       cflag_list += '-DTAPA_BUFFER_SUPPORT',
+    if args.enable_buffer_explicit_release:
+      cflag_list += '-DTAPA_BUFFER_EXPLICIT_RELEASE',
 
     # find clang include location
     tapacc_version = subprocess.check_output(
@@ -570,6 +576,12 @@ def main(argv: Optional[List[str]] = None):
           tapacc_cmd,
           proc.returncode,
       )
+      print("+++BEGIN TAPACC STDOUT+++")
+      print(proc.stdout)
+      print("+++ END  TAPACC STDOUT+++")
+      print("+++BEGIN TAPACC STDERR+++")
+      print(proc.stderr)
+      print("+++ END  TAPACC STDERR+++")
       # print the entire command
       for s in tapacc_cmd:
         print(s, end=' ')
