@@ -77,21 +77,24 @@ class Visitor : public clang::RecursiveASTVisitor<Visitor> {
   int GetTypeWidthBuffer(const clang::QualType type) {
     clang::RecordDecl* recordDecl = type->getAsRecordDecl();
     if (recordDecl) {
+      //llvm::dbgs() << recordDecl->getQualifiedNameAsString() << "\n";
       int64_t totalWidth = 0;
-      for (auto field: recordDecl->fields()) {
-        auto originalQualType = field->getType();
-        auto qualType = field->getType().getDesugaredType(context_);
-        auto qualTypeString = qualType.getAsString();
-        // this is an ap_uint or ap_int type
-        if (qualTypeString.find("ap_uint") != std::string::npos || qualTypeString.find("ap_int") != std::string::npos) {
-          auto templateArgument = GetTemplateArg(originalQualType, 0);
-          auto width = GetIntegerFromTemplateArg(*templateArgument);
-          totalWidth +=  width;
-        } else {
+      // this is an ap_uint or ap_int type
+      if (recordDecl->getNameAsString() == "ap_uint" || recordDecl->getNameAsString() == "ap_int") {
+        auto templateArgument = GetTemplateArg(type, 0);
+        auto width = GetIntegerFromTemplateArg(*templateArgument);
+        totalWidth +=  width;
+        //llvm::dbgs() << "Found ap_(u)int: width: " << width << "\n"; 
+      } else {
+        for (auto field: recordDecl->fields()) {
+          auto originalQualType = field->getType();
+          auto qualType = field->getType().getDesugaredType(context_);
+          auto qualTypeString = qualType.getAsString();
           totalWidth += context_.getTypeInfo(qualType).Width;
+          //llvm::dbgs() << "No ap_(u)int: width: " << context_.getTypeInfo(qualType).Width << "\n"; 
         }
       }
-      llvm::dbgs() << "totalWidth: " << totalWidth << "\n";
+      //llvm::dbgs() << "totalWidth:: " << totalWidth << "\n";
       return totalWidth;
     } else {
       return context_.getTypeInfo(type).Width;
