@@ -721,11 +721,11 @@ def generate_relay_memcores_reg(module_name, data_width, addr_width, addr_range,
   memports = 2 if (no_partitions == 1) else 1
   clk = ast.Ioport(ast.Input('clk'), second=ast.Wire('clk'))
   reset = ast.Ioport(ast.Input('reset'), second=ast.Wire('reset'))
-  port_list = [clk, reset]
   relayreg_fifo_to_lane0_read_cs = ast.Ioport(ast.Input('relayreg_cs_fifo_to_lane0_read'),
                                               second=ast.Wire('relayreg_cs_fifo_to_lane0_read'))
-  relayreg_fifo_to_lane0_read_ns = ast.Ioport(ast.Input('relayreg_ns_fifo_to_lane0_read'),
-                                              second=ast.Wire('relayreg_ns_fifo_to_lane0_read'))
+  relayreg_fifo_to_lane0_read_ns = ast.Ioport(ast.Output('relayreg_ns_fifo_to_lane0_read'),
+                                              second=ast.Reg('relayreg_ns_fifo_to_lane0_read'))
+  port_list = [clk, reset, relayreg_fifo_to_lane0_read_cs, relayreg_fifo_to_lane0_read_ns]
   for prefix in index_generator(dims):
     port_list.extend(
         generate_reg_ap_memory_interface(f'relayreg_i{prefix}', 'ADDR_WIDTH',
@@ -736,7 +736,7 @@ def generate_relay_memcores_reg(module_name, data_width, addr_width, addr_range,
   statements.append(
     generate_non_blocking_assignment(f'relayreg_ns_fifo_to_lane0_read',
                                      f'relayreg_cs_fifo_to_lane0_read'))
-  )
+
   for prefix in index_generator(dims):
     for memport in range(memports):
       statements.append(
@@ -762,6 +762,8 @@ def generate_relay_memcores_reg(module_name, data_width, addr_width, addr_range,
 def generate_relay_memcores_internal_assignments(dims, hybrid=True):
   statements = []
   memports = 2 if(hybrid) else 1
+
+  # connect producer at buffer boundary to localsignals
   for prefix in index_generator(dims):
     trunc_1p = f'locsig_i{prefix}'
     trunc_2p = f'relay_memcores_i{prefix}producer'
@@ -771,8 +773,9 @@ def generate_relay_memcores_internal_assignments(dims, hybrid=True):
         (generate_assignment(f'{trunc_1p}_ce{str(memport)}',      0, f'{trunc_2p}_ce{str(memport)}', None)),
         (generate_assignment(f'{trunc_1p}_d{str(memport)}',       0, f'{trunc_2p}_d{str(memport)}', None)),
         (generate_assignment(f'{trunc_1p}_we{str(memport)}',      0, f'{trunc_2p}_we{str(memport)}', None)),
-        (generate_assignment(f'{trunc_2p}_q0{str(memport)}',   None, f'{trunc_1p}_q{str(memport)}', 0))])
+        (generate_assignment(f'{trunc_2p}_q{str(memport)}',    None, f'{trunc_1p}_q{str(memport)}', 0))])
 
+  # connect consumer at buffer boundary to localsignals
   for prefix in index_generator(dims):
     trunc_1c = f'locsig_i{prefix}'
     trunc_2c = f'relay_memcores_i{prefix}consumer'
@@ -784,16 +787,33 @@ def generate_relay_memcores_internal_assignments(dims, hybrid=True):
         (generate_assignment(f'{trunc_1c}_we{str(memport)}',      'LEVEL', f'{trunc_2c}_we{str(memport)}', None)),
         (generate_assignment(f'{trunc_2c}_q{str(memport)}',          None, f'{trunc_1c}_q{str(memport)}', 'LEVEL'))])
 
+  # insert laneswitch<--->memcore assignments only if hybrid buffer is required
+  # otherwise memcores are connected directly to locsig[LEVEL]
+  if(hybrid):
+    for prefix in index_generator(dims):
+      trunc_1c = f'locsig_mc{prefix}'
+      trunc_2c = f'locsig_ls{prefix}'
+      for memport in range(memports):
+        statements.extend([
+          (generate_assignment(f'{trunc_1c}_address{str(memport)}', None, f'{trunc_2c}_address{str(memport)}' , None)),
+          (generate_assignment(f'{trunc_1c}_ce{str(memport)}',      None, f'{trunc_2c}_ce{str(memport)}'      , None)),
+          (generate_assignment(f'{trunc_1c}_d{str(memport)}',       None, f'{trunc_2c}_d{str(memport)}'       , None)),
+          (generate_assignment(f'{trunc_1c}_we{str(memport)}',      None, f'{trunc_2c}_we{str(memport)}'      , None)),
+          (generate_assignment(f'{trunc_2c}_q{str(memport)}',       None, f'{trunc_1c}_q{str(memport)}'       , None))])
+
   return statements
 
 
 # generate a relay based memcores module
-def generate_relay_memcores_module(module_name, memcore_reg_name, ls_memcore_name, data_width, 
-                           addr_width, addr_range, no_paritions, levels, dims):
+def generate_relay_memcores_module(module_name, memcore_reg_name, memcore_name, laneswitches_name,
+                            data_width, addr_width, addr_range, no_partitions, levels, dims):
   parameters = [('DATA_WIDTH', data_width), ('ADDR_WIDTH', addr_width),
                 ('ADDR_RANGE', addr_range), ('LEVEL', levels), ('IS_SIMPLE', 0)]
-  params = ast.Paramlist(
-      [generate_const_parameter(k, v) for k, v in parameters])
+  params = ast.Paramlist([generate_const_parameter(k, v) for k, v in parameters])
+
+  # is this a hybrid buffer implementation?
+  hybrid = (no_partitions == 1)
+  memports = 2 if (hybrid) else 1
 
   ### PORTS ###
   clk = ast.Ioport(ast.Input('clk'), second=ast.Wire('clk'))
@@ -806,33 +826,42 @@ def generate_relay_memcores_module(module_name, memcore_reg_name, ls_memcore_nam
     port_list.extend(generate_wire_ap_memory_interface(f'relay_memcores_i{prefix}',
                                                         'ADDR_WIDTH',
                                                         'DATA_WIDTH',
-                                                        (2 if no_paritions==1 else 1)))
+                                                        (2 if hybrid else 1)))
   ports = ast.Portlist(port_list)
 
   ### WIRES ###
   items = []
-  # create local signals
+  # create local signals...
   # for wiring the multiple relay stages
-  memports = 2 if (no_paritions == 1) else 1
   for prefix in index_generator(dims):
-    trunc_cs = f'locsig_i{prefix}'
-    # trunc_ns = f'locsig_i{prefix}ns'
+    locsig = f'locsig_i{prefix}'
     for memport in range(memports):
-      items.append(generate_decl(f'{trunc_cs}_address{str(memport)}', 'wire', 'ADDR_WIDTH', 'LEVEL'))
-      items.append(generate_decl(f'{trunc_cs}_d{str(memport)}', 'wire', 'DATA_WIDTH', 'LEVEL'))
-      items.append(generate_decl(f'{trunc_cs}_q{str(memport)}', 'wire', 'DATA_WIDTH', 'LEVEL'))
-      items.append(generate_decl(f'{trunc_cs}_we{str(memport)}', 'wire', None, 'LEVEL'))
-      items.append(generate_decl(f'{trunc_cs}_ce{str(memport)}', 'wire', None, 'LEVEL'))
-    # for memport in range(memports):
-    #   items.append(generate_decl(f'{trunc_ns}_address{str(memport)}', 'wire', 'ADDR_WIDTH', 'LEVEL'))
-    #   items.append(generate_decl(f'{trunc_ns}_d{str(memport)}', 'wire', 'DATA_WIDTH', 'LEVEL'))
-    #   items.append(generate_decl(f'{trunc_ns}_q{str(memport)}', 'wire', 'DATA_WIDTH', 'LEVEL'))
-    #   items.append(generate_decl(f'{trunc_ns}_we{str(memport)}', 'wire', None, 'LEVEL'))
-    #   items.append(generate_decl(f'{trunc_ns}_ce{str(memport)}', 'wire', None, 'LEVEL'))
-  # for wiring the read signal to be used by laneswitch when using a hybrid buffer
-  if(no_paritions == 1):
+      items.append(generate_decl(f'{locsig}_address{str(memport)}', 'wire', 'ADDR_WIDTH', 'LEVEL'))
+      items.append(generate_decl(f'{locsig}_d{str(memport)}', 'wire', 'DATA_WIDTH', 'LEVEL'))
+      items.append(generate_decl(f'{locsig}_q{str(memport)}', 'wire', 'DATA_WIDTH', 'LEVEL'))
+      items.append(generate_decl(f'{locsig}_we{str(memport)}', 'wire', None, 'LEVEL'))
+      items.append(generate_decl(f'{locsig}_ce{str(memport)}', 'wire', None, 'LEVEL'))
+
+  # if hybrid buffering is required
+  if(hybrid):
+    # for wiring the read signal to be used by laneswitch when using a hybrid buffer
     items.append(generate_decl(f'locsig_fifo_to_lane0_read', 'wire', None, 'LEVEL-1'))
-    # items.append(generate_decl(f'locsig_fifo_to_lane0_read_ns', 'wire', None, 'LEVEL-1'))
+
+    # for wiring the laneswitches to the memcores
+    for prefix in index_generator(dims):
+      locsig_ls = f'locsig_ls{prefix}'
+      locsig_mc = f'locsig_mc{prefix}'
+      for memport in range(memports):
+        items.append(generate_decl(f'{locsig_ls}_address{str(memport)}', 'wire', 'ADDR_WIDTH',))
+        items.append(generate_decl(f'{locsig_mc}_address{str(memport)}', 'wire', 'ADDR_WIDTH',))
+        items.append(generate_decl(f'{locsig_ls}_d{str(memport)}', 'wire', 'DATA_WIDTH',))
+        items.append(generate_decl(f'{locsig_mc}_d{str(memport)}', 'wire', 'DATA_WIDTH',))
+        items.append(generate_decl(f'{locsig_ls}_q{str(memport)}', 'wire', 'DATA_WIDTH',))
+        items.append(generate_decl(f'{locsig_mc}_q{str(memport)}', 'wire', 'DATA_WIDTH',))
+        items.append(generate_decl(f'{locsig_ls}_we{str(memport)}', 'wire', None,))
+        items.append(generate_decl(f'{locsig_mc}_we{str(memport)}', 'wire', None,))
+        items.append(generate_decl(f'{locsig_ls}_ce{str(memport)}', 'wire', None,))
+        items.append(generate_decl(f'{locsig_mc}_ce{str(memport)}', 'wire', None,))
 
   ### GENVAR ###
   items.append(ast.Decl((ast.Genvar('i'),)))
@@ -894,61 +923,99 @@ def generate_relay_memcores_module(module_name, memcore_reg_name, ls_memcore_nam
                                           ast.Pointer(var=ast.Identifier(f'{locsig_p}_q{str(memport)}'),
                                                       ptr=iplus1)))
 
-  # PORTLIST FOR LS_MEMCORE
+  # PORTLIST FOR LANESWTICHES
+  if(hybrid):
+    portlist_laneswitches_pairs = [
+        ('clk', ast.Identifier('clk')),
+        ('reset', ast.Identifier('reset')),
+    ]
+
+    portlist_laneswitches_pairs.append(('fifo_to_lane0_read',
+                                      ast.Pointer(var=ast.Identifier('locsig_fifo_to_lane0_read'),
+                                                  ptr=ast.Identifier('i'))))
+    portlist_laneswitches_pairs.append(('fifo_to_lane1_read', ast.Identifier('comb_fifo_to_lane1_read')))
+    for prefix in index_generator(dims):
+      locsig_p = f'locsig_ls{prefix}'
+      ls_lane0 = f'laneswitches_i{prefix}mem'
+      for memport in range(memports):
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_address{str(memport)}' , ast.Identifier(f'{locsig_p}_address{str(memport)}')))
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_ce{str(memport)}'      , ast.Identifier(f'{locsig_p}_ce{str(memport)}')))
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_d{str(memport)}'       , ast.Identifier(f'{locsig_p}_d{str(memport)}')))
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_we{str(memport)}'      , ast.Identifier(f'{locsig_p}_we{str(memport)}')))
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_q{str(memport)}'       , ast.Identifier(f'{locsig_p}_q{str(memport)}')))
+    for prefix in index_generator(dims):
+      locsig_p = f'locsig_i{prefix}'
+      ls_lane0 = f'laneswitches_i{prefix}lane0'
+      for memport in range(memports):
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_address{str(memport)}',
+                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_address{str(memport)}'),
+                                                  ptr=ast.Identifier('i'))))
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_ce{str(memport)}',
+                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_ce{str(memport)}'),
+                                                  ptr=ast.Identifier('i'))))
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_d{str(memport)}',
+                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_d{str(memport)}'),
+                                                  ptr=ast.Identifier('i'))))
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_we{str(memport)}',
+                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_we{str(memport)}'),
+                                                  ptr=ast.Identifier('i'))))
+        portlist_laneswitches_pairs.append((f'{ls_lane0}_q{str(memport)}',
+                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_q{str(memport)}'),
+                                                  ptr=ast.Identifier('i'))))
+    for prefix in index_generator(dims):
+      locsig_p = f'locsig_i{prefix}'
+      ls_lane1 = f'laneswitches_i{prefix}lane1'
+      for memport in range(memports):
+        portlist_laneswitches_pairs.append((f'{ls_lane1}_address{str(memport)}',
+                                        ast.Pointer(var=ast.Identifier(f'{locsig_p}_address{str(memport)}'),
+                                                    ptr=iplus1)))
+        portlist_laneswitches_pairs.append((f'{ls_lane1}_ce{str(memport)}',
+                                        ast.Pointer(var=ast.Identifier(f'{locsig_p}_ce{str(memport)}'),
+                                                    ptr=iplus1)))
+        portlist_laneswitches_pairs.append((f'{ls_lane1}_d{str(memport)}',
+                                        ast.Pointer(var=ast.Identifier(f'{locsig_p}_d{str(memport)}'),
+                                                    ptr=iplus1)))
+        portlist_laneswitches_pairs.append((f'{ls_lane1}_we{str(memport)}',
+                                        ast.Pointer(var=ast.Identifier(f'{locsig_p}_we{str(memport)}'),
+                                                    ptr=iplus1)))
+        portlist_laneswitches_pairs.append((f'{ls_lane1}_q{str(memport)}',
+                                        ast.Pointer(var=ast.Identifier(f'{locsig_p}_q{str(memport)}'),
+                                                    ptr=iplus1)))
+
+  # PORTLIST FOR MEMCORES
   portlist_memcore_pairs = [
       ('clk', ast.Identifier('clk')),
       ('reset', ast.Identifier('reset')),
   ]
-
-  portlist_memcore_pairs.append(('fifo_to_lane0_read',
-                                      ast.Pointer(var=ast.Identifier('locsig_fifo_to_lane0_read'),
-                                                  ptr=ast.Identifier('i'))))
-  portlist_memcore_pairs.append(('fifo_to_lane1_read', ast.Identifier('comb_fifo_to_lane1_read')))
   for prefix in index_generator(dims):
-    locsig_p = f'locsig_i{prefix}'
+    locsig_p = f'locsig_mc{prefix}'
+    memcore = f'memcores_i{prefix}'
     for memport in range(memports):
-      portlist_memcore_pairs.append((f'memcores_i{prefix}producer_address{str(memport)}',
-                                    ast.Pointer(var=ast.Identifier(f'{locsig_p}_address{str(memport)}'),
-                                                ptr=ast.Identifier('i'))))
-      portlist_memcore_pairs.append((f'memcores_i{prefix}producer_ce{str(memport)}',
-                                    ast.Pointer(var=ast.Identifier(f'{locsig_p}_ce{str(memport)}'),
-                                                ptr=ast.Identifier('i'))))
-      portlist_memcore_pairs.append((f'memcores_i{prefix}producer_d{str(memport)}',
-                                    ast.Pointer(var=ast.Identifier(f'{locsig_p}_d{str(memport)}'),
-                                                ptr=ast.Identifier('i'))))
-      portlist_memcore_pairs.append((f'memcores_i{prefix}producer_we{str(memport)}',
-                                    ast.Pointer(var=ast.Identifier(f'{locsig_p}_we{str(memport)}'),
-                                                ptr=ast.Identifier('i'))))
-      portlist_memcore_pairs.append((f'memcores_i{prefix}producer_q{str(memport)}',
-                                    ast.Pointer(var=ast.Identifier(f'{locsig_p}_q{str(memport)}'),
-                                                ptr=ast.Identifier('i'))))
-  for prefix in index_generator(dims):
-    locsig_p = f'locsig_i{prefix}'
-    for memport in range(memports):
-      portlist_memcore_pairs.append((f'memcores_i{prefix}consumer_address{str(memport)}',
-                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_address{str(memport)}'),
-                                                  ptr=iplus1)))
-      portlist_memcore_pairs.append((f'memcores_i{prefix}consumer_ce{str(memport)}',
-                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_ce{str(memport)}'),
-                                                  ptr=iplus1)))
-      portlist_memcore_pairs.append((f'memcores_i{prefix}consumer_d{str(memport)}',
-                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_d{str(memport)}'),
-                                                  ptr=iplus1)))
-      portlist_memcore_pairs.append((f'memcores_i{prefix}consumer_we{str(memport)}',
-                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_we{str(memport)}'),
-                                                  ptr=iplus1)))
-      portlist_memcore_pairs.append((f'memcores_i{prefix}consumer_q{str(memport)}',
-                                      ast.Pointer(var=ast.Identifier(f'{locsig_p}_q{str(memport)}'),
-                                                  ptr=iplus1)))
+      portlist_memcore_pairs.append((f'{memcore}address{str(memport)}', ast.Identifier(f'{locsig_p}_address{str(memport)}')))
+      portlist_memcore_pairs.append((f'{memcore}ce{str(memport)}',      ast.Identifier(f'{locsig_p}_ce{str(memport)}')))
+      portlist_memcore_pairs.append((f'{memcore}d{str(memport)}',       ast.Identifier(f'{locsig_p}_d{str(memport)}')))
+      portlist_memcore_pairs.append((f'{memcore}we{str(memport)}',      ast.Identifier(f'{locsig_p}_we{str(memport)}')))
+      portlist_memcore_pairs.append((f'{memcore}q{str(memport)}',       ast.Identifier(f'{locsig_p}_q{str(memport)}')))
 
   ### INTERNAL FSM ###
   assignment_statements = []
   # flop the lane0_read
-  assignment_statements.append(
-    (generate_assignment(f'locsig_fifo_to_lane0_read', 0, f'flop_fifo_to_lane0_read', None)),
-  )
+  if(hybrid):
+    assignment_statements.append(
+      (generate_assignment(f'locsig_fifo_to_lane0_read', 0, f'flop_fifo_to_lane0_read', None)),
+    )
   # create a list of all assignments for producer<-->[0] and consumer<-->[LEVEL]
-  assignment_statements = generate_relay_memcores_internal_assignments(dims, True)
+  more_assignment_statements = generate_relay_memcores_internal_assignments(dims, True)
+  assignment_statements.extend(more_assignment_statements)
+
+  if(hybrid):
+    # instantiate laneswitches as the last-level items for the memcore-regs
+    last_level_items = generate_instance_with_custom_ports(laneswitches_name, 'unit', instance_param_pairs, portlist_laneswitches_pairs)
+    # instantiate memcores separately
+    items.append(generate_instance_with_custom_ports(memcore_name, 'unit', instance_param_pairs, portlist_memcore_pairs))
+  else:
+    # instantiate memcores as the last-level items for the memcore-regs
+    last_level_items = generate_instance_with_custom_ports(memcore_name, 'unit', instance_param_pairs, portlist_memcore_pairs)
 
   items.append(
       ast.GenerateStatement(items=[
@@ -981,11 +1048,7 @@ def generate_relay_memcores_module(module_name, memcore_reg_name, ls_memcore_nam
                                           memcore_reg_name, 'unit',
                                           instance_param_pairs, portlist_memcorereg_pairs)
                                   ]),
-                                  false_statement=ast.Block([
-                                      generate_instance_with_custom_ports(
-                                          ls_memcore_name, 'unit',
-                                          instance_param_pairs, portlist_memcore_pairs)
-                                  ]))
+                                  false_statement=ast.Block([last_level_items]))
                           ],
                           scope='inst')), *assignment_statements
               ]),
@@ -1008,8 +1071,8 @@ def generate_relay_memcores_instance(module_name, instance_name, dims, level=Non
       ('reset', 'reset'),
   ]
   # feed fifos' read signals for laneswitching
-  ports.append(['relay_fifo_free_buffers_read', 'fifo_free_buffers_read'])          # asserted by producer, can be flop-ed
-  ports.append(['comb_fifo_occupied_buffers_read', 'fifo_occupied_buffers_read'])   # asserted by consumer, must be wired directly to laneswitch
+  ports.append(['flop_fifo_to_lane0_read', 'fifo_free_buffers_read'])          # asserted by producer, can be flop-ed
+  ports.append(['comb_fifo_to_lane1_read', 'fifo_occupied_buffers_read'])   # asserted by consumer, must be wired directly to laneswitch
   # connect relay memcores instance with relay-buffer boundary signals
   if(hybrid): # hybrid buffer. Expect two ports.
     for prefix in index_generator(dims):
@@ -1043,49 +1106,6 @@ def generate_relay_memcores_instance(module_name, instance_name, dims, level=Non
         (f'relay_memcores_i{prefix}consumer_q0',       f'buffer_core{prefix}consumer_q0'),
       ])
   return generate_instance(module_name, instance_name, params_list, ports)
-
-'''
-# generates a laneswitches instance inside final buffer
-def generate_laneswitches_instance(module_name, instance_name, dims, level=None):
-  params_list = [('DATA_WIDTH', 'MEMORY_DATA_WIDTH'),
-                 ('ADDR_WIDTH', 'MEMORY_ADDR_WIDTH'),
-                 ('ADDR_RANGE', 'MEMORY_ADDR_RANGE')]
-  if level is not None:
-    params_list.append(('LEVEL', level))
-  ports = [
-      ('clk', 'clk'),
-      ('reset', 'reset'),
-  ]
-  ports.extend([(f'fifo_to_lane0_read',f'fifo_free_buffers_read')])
-  ports.extend([(f'fifo_to_lane1_read',f'fifo_occupied_buffers_read')])
-  for prefix in index_generator(dims):
-    for memport in range(2):
-      # tag: SYNTAX_PORT_LANESWITCHES, SYNTAX_DECL_LANESWITCHES
-      ports.extend([
-          (f'laneswitches_i{prefix}mem_address{str(memport)}',  f'locsig_i{prefix}laneswitches_memcores_address{str(memport)}'),
-          (f'laneswitches_i{prefix}mem_we{str(memport)}',       f'locsig_i{prefix}laneswitches_memcores_we{str(memport)}'),
-          (f'laneswitches_i{prefix}mem_ce{str(memport)}',       f'locsig_i{prefix}laneswitches_memcores_ce{str(memport)}'),
-          (f'laneswitches_i{prefix}mem_d{str(memport)}',        f'locsig_i{prefix}laneswitches_memcores_d{str(memport)}'),
-          (f'laneswitches_i{prefix}mem_q{str(memport)}',        f'locsig_i{prefix}laneswitches_memcores_q{str(memport)}')])
-    for memport in range(2):
-      # tag: SYNTAX_PORT_BUFFER, SYNTAX_PORT_LANESWITCHES
-      ports.extend([
-          (f'laneswitches_i{prefix}lane0_address{str(memport)}', f'buffer_core{prefix}producer_address{str(memport)}'),
-          (f'laneswitches_i{prefix}lane0_we{str(memport)}',      f'buffer_core{prefix}producer_we{str(memport)}'),
-          (f'laneswitches_i{prefix}lane0_ce{str(memport)}',      f'buffer_core{prefix}producer_ce{str(memport)}'),
-          (f'laneswitches_i{prefix}lane0_d{str(memport)}',       f'buffer_core{prefix}producer_d{str(memport)}'),
-          (f'laneswitches_i{prefix}lane0_q{str(memport)}',       f'buffer_core{prefix}producer_q{str(memport)}')])
-    for memport in range(2):
-      # tag: SYNTAX_PORT_BUFFER, SYNTAX_PORT_LANESWITCHES
-      ports.extend([
-          (f'laneswitches_i{prefix}lane1_address{str(memport)}', f'buffer_core{prefix}consumer_address{str(memport)}'),
-          (f'laneswitches_i{prefix}lane1_we{str(memport)}',      f'buffer_core{prefix}consumer_we{str(memport)}'),
-          (f'laneswitches_i{prefix}lane1_ce{str(memport)}',      f'buffer_core{prefix}consumer_ce{str(memport)}'),
-          (f'laneswitches_i{prefix}lane1_d{str(memport)}',       f'buffer_core{prefix}consumer_d{str(memport)}'),
-          (f'laneswitches_i{prefix}lane1_q{str(memport)}',       f'buffer_core{prefix}consumer_q{str(memport)}')])
-  return generate_instance(module_name, instance_name, params_list, ports)
-'''
-
 
 # geneate ping-pong buffer module with pipelining
 def generate_relay_double_buffer_module(module_name, data_width, address_width,
@@ -1171,7 +1191,7 @@ def add_keep_true_attributes(file_contents):
   return file_contents
 
 
-def generate_relay_memcores_file(module_name, file_name, memcore_name,
+def generate_relay_memcores_file(module_name, file_name, memcore_name, laneswitches_name,
                                 data_width, addr_width, addr_range, no_partitions,
                                 latency, dims):
   """
@@ -1188,7 +1208,7 @@ def generate_relay_memcores_file(module_name, file_name, memcore_name,
   module_reg = generate_relay_memcores_reg(f'{module_name}_reg', data_width,
                                           addr_width, addr_range, no_partitions, dims)
   module = generate_relay_memcores_module(module_name, f'{module_name}_reg',
-                                  f'ls_{memcore_name}', data_width, addr_width,
+                                  memcore_name, laneswitches_name, data_width, addr_width,
                                   addr_range, no_partitions, latency, dims)
   output_str = ''
   output_str += modules_to_str([module, module_reg])
@@ -1241,13 +1261,6 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
                                 address_range=addr_range,
                                 dims=dims_pattern),
         os.path.join(base_path, f'{laneswitches_name}.v'))
-    module_to_file(
-        generate_ls_memcores_module(module_name=ls_memcores_name,
-                                data_width=data_width,
-                                address_width=addr_width,
-                                address_range=addr_range,
-                                dims=dims_pattern),
-        os.path.join(base_path, f'{ls_memcores_name}.v'))
   module_to_file(
       generate_double_buffer_module(module_name=buffer_module_name,
                                     data_width=data_width,
@@ -1262,6 +1275,7 @@ def generate_buffer_files(buffer_name, dims_pattern, data_width, addr_width,
                               file_name=os.path.join(
                                   base_path, f'{relay_memcores_name}.v'),
                               memcore_name=memcores_name,
+                              laneswitches_name=laneswitches_name,
                               data_width=data_width,
                               addr_width=addr_width,
                               addr_range=addr_range,
