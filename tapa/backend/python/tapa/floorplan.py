@@ -28,10 +28,10 @@ class InputError(Exception):
 
 def get_base_path_tcl(config_with_floorplan):
   part_num = config_with_floorplan['part_num']
-  if part_num.startswith('xcu200') or part_num.startswith('xcu50'):
-    return 'level0_i/ulp'
-  else:
-    return 'pfm_top_i/dynamic_region'
+  # if part_num.startswith('xcu200') or part_num.startswith('xcu50'):
+  return 'level0_i/ulp'
+  # else:
+  #   return 'pfm_top_i/dynamic_region'
 
 def generate_floorplan(
     part_num: str,
@@ -259,9 +259,16 @@ def get_vivado_tcl(config_with_floorplan):
         f'add_cells_to_pblock [get_pblocks {region}] [get_cells -regex {{')
     # note the .* after inst
     # this is because we add a wrapper around user logic for AXI pipelining
-    vivado_tcl += [
-        f'  {get_base_path_tcl(config_with_floorplan)}/.*/inst/.*/{inst}' for inst in inst_list
-    ]
+    for inst in inst_list:
+      if("__state" in inst):
+        vivado_tcl += [
+            f'  {get_base_path_tcl(config_with_floorplan)}/.*/inst/.*/FSM_sequential_{inst}',
+            f'  {get_base_path_tcl(config_with_floorplan)}/.*/inst/.*/{inst}'
+        ]
+      else:
+        vivado_tcl += [
+            f'  {get_base_path_tcl(config_with_floorplan)}/.*/inst/.*/{inst}'
+        ]
     vivado_tcl.append(f'}} ]')
 
   # floorplan the axi pipelines

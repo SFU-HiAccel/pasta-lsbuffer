@@ -64,7 +64,7 @@ xo: ${KERNEL_XO}
 
 ${KERNEL_XO}: ${KERNEL_CO}
 	@echo "[MAKE]: Compiling for XO target"
-	tapac -vv -o ${KERNEL_XO} src/${KERNEL}.cpp --platform ${PLATFORM} --top ${KERNEL_TOP} --work-dir ${KERNEL_XO}.tapa --enable-buffer-support --connectivity connectivity.ini --max-parallel-synth-jobs 24 --separate-complex-buffer-tasks
+	tapac -vv -o ${KERNEL_XO} src/${KERNEL}.cpp --platform ${PLATFORM} --top ${KERNEL_TOP} --work-dir ${KERNEL_XO}.tapa --enable-buffer-support --connectivity connectivity.ini --max-parallel-synth-jobs 24 --separate-complex-buffer-tasks ${XO_FLAGS}
 
 runxo: xo
 	@echo "[MAKE]: Target HW_EMU"

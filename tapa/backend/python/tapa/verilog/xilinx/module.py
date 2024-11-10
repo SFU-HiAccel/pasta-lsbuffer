@@ -228,6 +228,9 @@ class Module:
         arr.insert(2, str(index))
         new_suffix = "_".join(arr)
         port = ports.get(f'{base_name}{new_suffix}')
+        if port is None:
+          # perhaps this is multiple buffers with just one element, drop the index altogether
+          port = ports.get(f'{base_name}{suffix}')
 
     # don't raise exception, parent should check if None
     return port
