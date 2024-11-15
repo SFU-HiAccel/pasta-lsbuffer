@@ -8,22 +8,52 @@ using clang::Type;
 
 using llvm::dyn_cast;
 
-int GetIntegerFromTemplateArg(const clang::TemplateArgument& arg) {
-  llvm::APSInt integerValue;
-  if (arg.getKind() == clang::TemplateArgument::Integral) {
-    integerValue = arg.getAsIntegral();
-  } else if (arg.getKind() == clang::TemplateArgument::Expression) {
-    auto factorExpr = arg.getAsExpr();
-    auto factorConstantExpr = llvm::dyn_cast<clang::ConstantExpr>(factorExpr);
-    auto child = *factorConstantExpr->child_begin();
-    auto childIntegerLiteral = llvm::dyn_cast<clang::IntegerLiteral>(child);
-    integerValue = childIntegerLiteral->getValue();
+int64_t EvaluateConstantExpr(const clang::Expr *expression)
+{
+  using namespace clang;
+  if (const auto *constExpr = llvm::dyn_cast<ConstantExpr>(expression)) {
+      return EvaluateConstantExpr(constExpr->getSubExpr());
+  }
+  if (const auto *intLiteral = llvm::dyn_cast<IntegerLiteral>(expression)) {
+      return intLiteral->getValue().getSExtValue();
+  }
+  if (const auto *parenExpr = llvm::dyn_cast<ParenExpr>(expression)) {
+      return EvaluateConstantExpr(parenExpr->getSubExpr());
+  }
+  if (const auto *binaryOp = llvm::dyn_cast<BinaryOperator>(expression)) {
+      auto lhs = EvaluateConstantExpr(binaryOp->getLHS());
+      auto rhs = EvaluateConstantExpr(binaryOp->getRHS());
+      if (!lhs || !rhs) {
+          //return llvm::None; // Could not evaluate one of the sides
+      }
+      switch (binaryOp->getOpcode()) {
+          case BO_Add: return lhs + rhs;
+          case BO_Sub: return lhs - rhs;
+          case BO_Mul: return lhs * rhs;
+          case BO_Div: return rhs != 0 ? lhs / rhs : 0xFFFFFFFFFFFFFFFF;
+          case BO_Shl: return lhs << rhs;
+          case BO_Shr: return lhs >> rhs;
+          default:
+              llvm::errs() << "Unsupported binary operator in constant expression.\n";
+              return 0xFFFFFFFFFFFFFFFF;
+      }
+  }
+  llvm::errs() << "Unsupported expression type in constant expression evaluation.\n";
+  return 0xFFFFFFFFFFFFFFFF;
+}
+
+int GetIntegerFromTemplateArg(const clang::TemplateArgument& templateArgument) {
+  int64_t integerValue;
+  if (templateArgument.getKind() == clang::TemplateArgument::Integral) {
+    assert(templateArgument.getAsIntegral().getBitWidth() <= 64);
+    integerValue = templateArgument.getAsIntegral().getZExtValue();
+  } else if (templateArgument.getKind() == clang::TemplateArgument::Expression) {
+    integerValue = EvaluateConstantExpr(templateArgument.getAsExpr());
   } else {
     // template argument type should be expression or integral
     assert(1 == 0);
   }
-  assert(integerValue.getBitWidth() <= 64);
-  return integerValue.getZExtValue();
+  return integerValue;
 }
 
 std::string GetRecordName(const clang::QualType& qualType) {
@@ -51,6 +81,7 @@ void ParseDimensions(const clang::ConstantArrayType* constantArrayType,
     baseType = elementQualType;
   }
 }
+
 
 json BufferConfig::toJson() {
   auto dims = json::array();
