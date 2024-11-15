@@ -71,9 +71,73 @@ class Visitor : public clang::RecursiveASTVisitor<Visitor> {
   clang::SourceLocation GetEndOfLoc(clang::SourceLocation loc);
 
   int64_t EvalAsInt(const clang::Expr* expr);
+
+  int64_t GetIntegerFromTemplateExpression(const clang::TemplateArgument &templateArgument) {
+    int64_t integral = 0;
+    if (templateArgument.getKind() != clang::TemplateArgument::Expression) {
+      printf("GetIntegerFromTemplateExpression: Integral\n");
+      return integral;
+    }
+    const clang::Expr *expression = templateArgument.getAsExpr();
+    printf("GetIntegerFromTemplateExpression: Expr\n");
+    clang::Expr::EvalResult evalResult;
+    if (expression->isValueDependent()) {
+      printf("Eval: %ld | Old: %ld\n", EvaluateConstantExpr(templateArgument.getAsExpr()), integral);
+      return integral;
+    }
+    integral += evalResult.Val.getInt().getSExtValue();
+    printf("Eval: %ld | Old: %ld\n", EvaluateConstantExpr(templateArgument.getAsExpr()), integral);
+    return integral;
+  }
+
   int GetTypeWidth(const clang::QualType type) {
     return context_.getTypeInfo(type).Width;
   }
+
+  void PrintTemplateArgument(const clang::TemplateArgument &arg) {
+      using namespace clang;
+      using namespace llvm;
+
+      switch (arg.getKind()) {
+          case TemplateArgument::Null:
+              errs() << "TemplateArgument is Null.\n";
+              break;
+          case TemplateArgument::Type:
+              errs() << "TemplateArgument Type: "
+                     << arg.getAsType().getAsString() << "\n";
+              break;
+          case TemplateArgument::Declaration:
+              errs() << "TemplateArgument Declaration: "
+                     << arg.getAsDecl()->getDeclKindName() << "\n";
+              break;
+          case TemplateArgument::Integral:
+              errs() << "TemplateArgument Integral: "
+                     << arg.getAsIntegral().toString(10) << "\n";
+              break;
+          case TemplateArgument::Template:
+              errs() << "TemplateArgument Template: "
+                     << arg.getAsTemplate().getAsTemplateDecl()->getNameAsString() << "\n";
+              break;
+          case TemplateArgument::TemplateExpansion:
+              errs() << "TemplateArgument TemplateExpansion\n";
+              break;
+          case TemplateArgument::Expression:
+              errs() << "TemplateArgument Expression: ";
+              arg.getAsExpr()->dump();
+              break;
+          case TemplateArgument::Pack:
+              errs() << "TemplateArgument Pack with "
+                     << arg.pack_size() << " elements:\n";
+              for (const auto &packedArg : arg.pack_elements()) {
+                  PrintTemplateArgument(packedArg);
+              }
+              break;
+          default:
+              errs() << "Unknown TemplateArgument kind.\n";
+              break;
+      }
+  }
+
   int GetTypeWidthBuffer(const clang::QualType type) {
     clang::RecordDecl* recordDecl = type->getAsRecordDecl();
     if (recordDecl) {
@@ -82,8 +146,17 @@ class Visitor : public clang::RecursiveASTVisitor<Visitor> {
       // this is an ap_uint or ap_int type
       if (recordDecl->getNameAsString() == "ap_uint" || recordDecl->getNameAsString() == "ap_int") {
         auto templateArgument = GetTemplateArg(type, 0);
-        auto width = GetIntegerFromTemplateArg(*templateArgument);
-        totalWidth +=  width;
+        //PrintTemplateArgument(*templateArgument);
+        if(templateArgument->getKind() == clang::TemplateArgument::Integral) {
+          auto width = GetIntegerFromTemplateArg(*templateArgument);
+          totalWidth += width;
+        } else if(templateArgument->getKind() == clang::TemplateArgument::Expression) {
+          auto width = EvaluateConstantExpr(templateArgument->getAsExpr());
+          totalWidth += width;
+        } else {
+          printf("No template argument\n");
+        }
+        //auto width = GetIntegerFromTemplateArg(*templateArgument);
         //llvm::dbgs() << "Found ap_(u)int: width: " << width << "\n"; 
       } else {
         for (auto field: recordDecl->fields()) {
@@ -94,7 +167,7 @@ class Visitor : public clang::RecursiveASTVisitor<Visitor> {
           //llvm::dbgs() << "No ap_(u)int: width: " << context_.getTypeInfo(qualType).Width << "\n"; 
         }
       }
-      //llvm::dbgs() << "totalWidth:: " << totalWidth << "\n";
+      // printf("totalWidth:: %ld\n", totalWidth);
       return totalWidth;
     } else {
       return context_.getTypeInfo(type).Width;

@@ -74,4 +74,7 @@ const clang::ClassTemplateSpecializationDecl* GetTapaBuffersDecl(
 const clang::ClassTemplateSpecializationDecl* GetTapaBuffersDecl(
     const clang::QualType& qual_type);
 
+int64_t EvaluateConstantExpr(const clang::Expr *expression);
+
+
 #endif  // TAPA_BUFFER_H_
