@@ -1009,8 +1009,8 @@ def generate_relay_memcores_module(module_name, memcore_reg_name, memcore_name, 
   assignment_statements.extend(more_assignment_statements)
 
   if(hybrid):
-    # instantiate laneswitches as the last-level items for the memcore-regs
-    last_level_items = generate_instance_with_custom_ports(laneswitches_name, 'unit', instance_param_pairs, portlist_laneswitches_pairs)
+    # instantiate laneswitches as the last-level items for the memcore-regs, but remove `IS_SIMPLE` from instance parameters list
+    last_level_items = generate_instance_with_custom_ports(laneswitches_name, 'unit', instance_param_pairs[:-1], portlist_laneswitches_pairs)
     # instantiate memcores separately
     items.append(generate_instance_with_custom_ports(memcore_name, 'unit', instance_param_pairs, portlist_memcore_pairs))
   else:
