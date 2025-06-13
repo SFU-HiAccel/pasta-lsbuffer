@@ -20,7 +20,7 @@ PROJECT_DIR=$(dirname $PWD)
 ## PASTA
 ##----------
 cd $PROJECT_DIR
-git checkout main
+#git checkout main
 cd tapa
 TAPA_DIR=$PWD
 cd backend/python && pip3 install --editable .

@@ -144,14 +144,20 @@ def generate_ports_from_info(info):
 
 # given a certain prefix, address width and data width, generate
 # ap_memory ports
-def generate_ap_memory_interface(prefix, address_width, data_width, memports=1):
+def generate_ap_memory_interface(prefix, address_width, data_width, memports=1, invertio=False):
   info = []
+  if(not invertio):
+    direction1 = "input"
+    direction2 = "output"
+  else:
+    direction1 = "output"
+    direction2 = "input" 
   for memport in range(memports):
-    info.extend([(f"{prefix}address{str(memport)}", "input", address_width, "wire"),
-            (f"{prefix}d{str(memport)}", "input", data_width, "wire"),
-            (f"{prefix}q{str(memport)}", "output", data_width, "wire"),
-            (f"{prefix}we{str(memport)}", "input", None, "wire"),
-            (f"{prefix}ce{str(memport)}", "input", None, "wire")])
+    info.extend([(f"{prefix}address{str(memport)}", direction1, address_width, "wire"),
+            (f"{prefix}d{str(memport)}", direction1, data_width, "wire"),
+            (f"{prefix}q{str(memport)}", direction2, data_width, "wire"),
+            (f"{prefix}we{str(memport)}", direction1, None, "wire"),
+            (f"{prefix}ce{str(memport)}", direction1, None, "wire")])
   return generate_ports_from_info(info)
 
 
@@ -267,7 +273,7 @@ def generate_laneswitches_ports(address_width, data_width, indices):
   for i in listindices:
     io_port_name = f"laneswitches_i{i}mem_"
     ports.extend(
-        generate_ap_memory_interface(io_port_name, address_width, data_width, memports=2))
+        generate_ap_memory_interface(io_port_name, address_width, data_width, memports=2, invertio=True))
     
   # generate i instances, each with 2 lanes, each lane with 2 mem ports 
   for i in listindices:

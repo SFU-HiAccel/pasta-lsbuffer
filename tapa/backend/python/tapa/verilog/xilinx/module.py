@@ -647,7 +647,7 @@ class Module:
                     argname=ast.Constant(size_memcore),
                 ),
                 ast.ParamArg(paramname='FIFO_DATA_WIDTH',
-                             argname=ast.Constant(32)),
+                             argname=ast.Constant(4)),
                 ast.ParamArg(paramname='FIFO_ADDR_WIDTH',
                              argname=ast.Constant(
                                  max(1, (buffer_config.n_sections -

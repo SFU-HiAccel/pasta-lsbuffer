@@ -18,13 +18,13 @@ VITIS_COMMAND_BASIC = [
     '  "${XO}" \\',
     '  --vivado.synth.jobs ${MAX_SYNTH_JOBS} \\',
     '  --vivado.prop=run.impl_1.STEPS.PHYS_OPT_DESIGN.IS_ENABLED=1 \\',
-    '  --vivado.prop=run.impl_1.STEPS.OPT_DESIGN.ARGS.DIRECTIVE=$STRATEGY \\',
-    '  --vivado.prop=run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=$PLACEMENT_STRATEGY \\',
-    '  --vivado.prop=run.impl_1.STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE=$STRATEGY \\',
-    '  --vivado.prop=run.impl_1.STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE=$STRATEGY \\',
+    '  --vivado.prop=run.impl_1.STEPS.OPT_DESIGN.ARGS.DIRECTIVE=${OPT_DESIGN_STRATEGY} \\',
+    '  --vivado.prop=run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=${PLACE_DESIGN_STRATEGY} \\',
+    '  --vivado.prop=run.impl_1.STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE=${PHYS_OPT_DESIGN_STRATEGY} \\',
+    '  --vivado.prop=run.impl_1.STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE=${ROUTE_DESIGN_STRATEGY} \\',
 ]
 FLOORPLAN_OPTION = [
-    '  --vivado.prop=run.impl_1.STEPS.OPT_DESIGN.TCL.PRE=$CONSTRAINT \\'
+    '  --vivado.prop=run.impl_1.STEPS.OPT_DESIGN.TCL.PRE=${CONSTRAINT} \\'
 ]
 CONFIG_OPTION = ['  --config "${CONFIG_FILE}" \\']
 CLOCK_OPTION = ['  --kernel_frequency ${TARGET_FREQUENCY} \\']
@@ -100,9 +100,27 @@ def get_vitis_script(args) -> str:
   script.append(r'OUTPUT_DIR="$(pwd)/vitis_run_${TARGET}"')
   script += NEWLINE
 
-  script.append(r'MAX_SYNTH_JOBS=8')
-  script.append(r'STRATEGY="Explore"')
-  script.append(r'PLACEMENT_STRATEGY="EarlyBlockPlacement"')
+  script.append(r'MAX_SYNTH_JOBS=12')
+  if(args.explicit_impl_strategy): 
+    script.append(r'OPT_DESIGN_STRATEGY="'+str(args.impl_strategy_opt)+'"')
+    script.append(r'PLACE_DESIGN_STRATEGY="'+str(args.impl_strategy_place)+'"')
+    script.append(r'ROUTE_DESIGN_STRATEGY="'+str(args.impl_strategy_route)+'"')
+    script.append(r'PHYS_OPT_DESIGN_STRATEGY="'+str(args.impl_strategy_physopt)+'"')
+  else:
+    if(args.quick_impl):
+      script.append(r'OPT_DESIGN_STRATEGY="RuntimeOptimized"')
+      script.append(r'PLACE_DESIGN_STRATEGY="RuntimeOptimized"')
+      script.append(r'ROUTE_DESIGN_STRATEGY="Quick"')
+      script.append(r'PHYS_OPT_DESIGN_STRATEGY="RuntimeOptimized"')
+    else:
+      script.append(r'OPT_DESIGN_STRATEGY="ExploreWithRemap"')
+      script.append(r'PLACE_DESIGN_STRATEGY="WLDrivenBlockPlacement"')
+      script.append(r'ROUTE_DESIGN_STRATEGY="AggressiveExplore"')
+      script.append(r'PHYS_OPT_DESIGN_STRATEGY="AggressiveExplore"')
+  #script.append(r'OPT_DESIGN_STRATEGY="${ENV_OPT_DESIGN_STRATEGY}"')
+  #script.append(r'PLACE_DESIGN_STRATEGY="${ENV_PLACE_DESIGN_STRATEGY}"')
+  #script.append(r'ROUTE_DESIGN_STRATEGY="${ENV_ROUTE_DESIGN_STRATEGY}"')
+  #script.append(r'PHYS_OPT_DESIGN_STRATEGY="${ENV_PHYS_OPT_DESIGN_STRATEGY}"')
   script += NEWLINE
 
   script += vitis_command
