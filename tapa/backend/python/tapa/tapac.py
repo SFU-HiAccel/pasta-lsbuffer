@@ -397,6 +397,82 @@ def create_parser() -> argparse.ArgumentParser:
             'slot. SLR_CROSSING_PRIORITIZED: give priority to the number of '
             'SLR crossing wires.'),
   )
+  impl_strategies = parser.add_argument_group(
+      title='Vivado Implementation Strategy',
+      description=('Choose different strategies in Vivado Implementation '
+                   '(advanced usage).'),
+  )
+  impl_strategies.add_argument(
+      '--quick-impl',
+      dest='quick_impl',
+      action='store_true',
+      help=('Run fewest iterations of implementation optimizations, '
+            'trading higher design performance for faster runtime. '),
+  )
+  impl_strategies.add_argument(
+      '--explicit-impl-strategy',
+      dest='explicit_impl_strategy',
+      action='store_true',
+      help=('Specify all implementation strategies explicitly. '),
+  )
+  impl_strategies.add_argument(
+      '--impl-strategy-opt',
+      dest='impl_strategy_opt',
+      type=str,
+      default='Explore',
+      choices=[
+          'Explore',
+          'AddRemap',
+          'ExploreWithRemap',
+          'ExploreArea',
+      ],
+      help=(
+          'Override the default logic opt directive '),
+  )
+  impl_strategies.add_argument(
+      '--impl-strategy-place',
+      dest='impl_strategy_place',
+      type=str,
+      default='Explore',
+      choices=[
+          'Explore',
+          'EarlyBlockPlacement',
+          'WLDrivenBlockPlacement',
+      ],
+      help=(
+          'Override the default place directive '),
+  )
+  impl_strategies.add_argument(
+      '--impl-strategy-route',
+      dest='impl_strategy_route',
+      type=str,
+      default='Explore',
+      choices=[
+          'Explore',
+          'AggressiveExplore',
+          'NoTimingRelaxation',
+          'MoreGlobalIterations',
+          'HigherDelayCost',
+          'AlternateCLBRouting',
+      ],
+      help=(
+          'Override the default route directive '),
+  )
+  impl_strategies.add_argument(
+      '--impl-strategy-physopt',
+      dest='impl_strategy_physopt',
+      type=str,
+      default='Explore',
+      choices=[
+          'Explore',
+          'AggressiveExplore',
+          'AddRetime',
+          'AlternateFlowWithRetiming',
+          'AggressiveFanoutOpt',
+      ],
+      help=(
+          'Override the default physopt directive '),
+  )
   return parser
 
 
@@ -566,6 +642,11 @@ def main(argv: Optional[List[str]] = None):
 
     tapacc_cmd += cflag_list
 
+    # print the entire command
+    print(tapacc_cmd)
+    print("===")
+    for s in tapacc_cmd:
+      print(s, end=' ')
     proc = subprocess.run(tapacc_cmd,
                           stdout=subprocess.PIPE,
                           universal_newlines=True,
@@ -576,17 +657,28 @@ def main(argv: Optional[List[str]] = None):
           tapacc_cmd,
           proc.returncode,
       )
+      print()
       print("+++BEGIN TAPACC STDOUT+++")
       print(proc.stdout)
       print("+++ END  TAPACC STDOUT+++")
       print("+++BEGIN TAPACC STDERR+++")
       print(proc.stderr)
       print("+++ END  TAPACC STDERR+++")
-      # print the entire command
-      for s in tapacc_cmd:
-        print(s, end=' ')
+      if(proc.stderr == 'None'):
+        print("Possibly received Segmentation Fault")
       parser.exit(status=proc.returncode)
-    tapa_program_json_dict = json.loads(proc.stdout)
+
+    try:
+      tapa_program_json_dict = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+      # Handle the JSON decode error and print error details
+      print("Invalid JSON!")
+      print(f"Error message: {e.msg}")
+      print(f"Error at line {e.lineno}, column {e.colno} (character position {e.pos})")
+      print("Error context:", proc.stdout.splitlines()[e.lineno - 1].strip())
+      # Optional: Display a marker showing where the error is located
+      print(" " * (e.colno - 1) + "^")
+
 
     # Use -MM to find all user headers
     input_file_basename = os.path.basename(args.input_file)
