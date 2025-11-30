@@ -45,27 +45,6 @@ cd <repo_root>/installer
 Once the installation is complete, a `setup` file will be created in the project directory.  
 Please use `source setup` to setup the current shell with the required PATHs.
 
----
-
-<details>
-<summary>Expand this to see example usage.</summary>
-
-### Buffer channel configuration
-An LS-buffer channel declaration looks like the following:
-```cpp
-tapa::buffer<float[NX][NY][NZ],      // the type, followed by the dimensions and their sizes
-             1,                      // the no of sections (must be 1 to enable LS buffering).
-             tapa::array_partition<  // a list of partition strategy for each dimension
-                tapa::normal,        // normal partitioning (no partitioning)
-                tapa::cyclic<2>,     // cyclic partition with factor of 2, block is also supported
-                tapa::complete       // complete partitioning
-              >,
-             tapa::memcore<tapa::bram> // the memcore to use, can be BRAM and URAM
-             >
-```
-
-When the number of sections in the declaration is 1, the tool will automatically convert the regular buffer into a LS buffer.
-
 ## Citation
 
 If you use HiSpMM in your research, please cite:
@@ -87,4 +66,25 @@ month = oct,
 keywords = {Multi-producer multi-consumer, buffer optimization, floorplan optimization, multi-die FPGA, high-level synthesis}
 }
 ```
+
+---
+
+<details>
+<summary>Expand this to see example usage.</summary>
+
+### Buffer channel configuration
+An LS-buffer channel declaration looks like the following:
+```cpp
+tapa::buffer<float[NX][NY][NZ],      // the type, followed by the dimensions and their sizes
+             1,                      // the no of sections (must be 1 to enable LS buffering).
+             tapa::array_partition<  // a list of partition strategy for each dimension
+                tapa::normal,        // normal partitioning (no partitioning)
+                tapa::cyclic<2>,     // cyclic partition with factor of 2, block is also supported
+                tapa::complete       // complete partitioning
+              >,
+             tapa::memcore<tapa::bram> // the memcore to use, can be BRAM and URAM
+             >
+```
+
+When the number of sections in the declaration is 1, the tool will automatically convert the regular buffer into a LS buffer.
 
